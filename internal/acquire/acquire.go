@@ -10,6 +10,7 @@ import (
 	"mangarr/internal/domain"
 	"mangarr/internal/download"
 	"mangarr/internal/files"
+	"mangarr/internal/resolve"
 	"mangarr/internal/sanitize"
 	"mangarr/internal/templater"
 
@@ -30,6 +31,7 @@ type PageSource interface {
 
 type Request struct {
 	Source            PageSource
+	SourceKey         string
 	Manga             domain.Manga
 	Chapter           domain.Chapter
 	DownloadDirectory string
@@ -37,12 +39,16 @@ type Request struct {
 	TitleOverride     string
 	Force             bool
 	DryRun            bool
+	Groups            *domain.GroupRegistry
+	Profiles          *domain.ProfileRegistry
+	ProfileRef        string
 }
 
 type Result struct {
-	Status Status
-	Name   string
-	Path   string
+	Status   Status
+	Name     string
+	Path     string
+	Decision domain.Decision
 }
 
 func Chapter(ctx context.Context, log zerolog.Logger, request Request) (Result, error) {
@@ -55,6 +61,16 @@ func Chapter(ctx context.Context, log zerolog.Logger, request Request) (Result, 
 	archiveName := sanitize.Filename(name) + ".cbz"
 	archivePath := filepath.Join(request.DownloadDirectory, manga.Title, archiveName)
 	result := Result{Name: name, Path: archivePath}
+
+	if request.Profiles != nil && request.ProfileRef != "" {
+		result.Decision = resolve.Resolve(
+			request.Groups,
+			request.Profiles,
+			request.SourceKey,
+			request.Chapter.Group,
+			request.ProfileRef,
+		)
+	}
 
 	if request.DryRun {
 		// Dry-run: report the would-be archive without resolving pages or

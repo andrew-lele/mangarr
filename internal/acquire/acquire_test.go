@@ -14,10 +14,66 @@ import (
 	"testing"
 
 	"mangarr/internal/domain"
+	"mangarr/internal/registry"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
+
+const (
+	cpGroupID       = "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b"
+	novaGroupID     = "b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c"
+	profileID       = "f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f"
+	comixCPNative   = "9641"
+	comixNovaNative = "4725"
+)
+
+const testGroupsYAML = `version: 1
+
+groups:
+  a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
+    aliases: [ "CP" ]
+    sources:
+      comix: "9641"
+
+  b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c:
+    aliases: [ "Nova" ]
+    sources:
+      comix: "4725"
+`
+
+const testProfilesYAML = `version: 1
+
+profiles:
+  f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f:
+    name: "Comix Preferred"
+    preferredGroups: [ "CP" ]
+    ignoredGroups: [ "b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c" ]
+    fallback: "any"
+`
+
+func writeFile(t *testing.T, root, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeRegistry writes groups.yaml and profiles.yaml into a temp dir and
+// loads both registries through the production loaders.
+func writeRegistry(t *testing.T) (domain.GroupRegistry, domain.ProfileRegistry) {
+	t.Helper()
+
+	root := t.TempDir()
+	writeFile(t, root, registry.GroupsFileName, testGroupsYAML)
+	writeFile(t, root, registry.ProfilesFileName, testProfilesYAML)
+
+	groups, err := registry.LoadGroups(root)
+	require.NoError(t, err)
+	profiles, err := registry.LoadProfiles(root, &groups)
+	require.NoError(t, err)
+	return groups, profiles
+}
 
 func TestChapterDownloadsAndThenSkipsExistingArchive(t *testing.T) {
 	t.Parallel()
@@ -64,6 +120,58 @@ func TestChapterDownloadsAndThenSkipsExistingArchive(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, Skipped, result.Status)
 	require.Equal(t, 1, source.calls, "skip must not resolve pages")
+}
+
+func TestChapterDryRunResolvesGroupDecision(t *testing.T) {
+	t.Parallel()
+
+	groups, profiles := writeRegistry(t)
+
+	source := &pageSource{pages: []domain.ImageInfo{{ImageURL: "http://example.invalid/page.png"}}}
+	request := Request{
+		Source:            source,
+		SourceKey:         "comix",
+		Manga:             domain.Manga{Title: "Original Title"},
+		Chapter:           domain.Chapter{Number: mustChapterNumber("7.1"), Title: "The Chapter", Group: comixCPNative},
+		DownloadDirectory: t.TempDir(),
+		NamingTemplate:    "{manga:<.>} Ch. {num}{title: - <.>}",
+		TitleOverride:     "Replacement: Title",
+		DryRun:            true,
+		Groups:            &groups,
+		Profiles:          &profiles,
+		ProfileRef:        profileID,
+	}
+
+	result, err := Chapter(t.Context(), zerolog.Nop(), request)
+	require.NoError(t, err)
+	require.Equal(t, DryRun, result.Status)
+	require.Equal(t, cpGroupID, result.Decision.CanonicalID, "native id resolves to the preferred canonical group")
+	require.Equal(t, domain.OutcomePreferred, result.Decision.Outcome)
+	require.Equal(t, 0, result.Decision.PreferredIndex)
+
+	// An ignored native id is rejected with the canonical id attached.
+	request.Chapter.Group = comixNovaNative
+	result, err = Chapter(t.Context(), zerolog.Nop(), request)
+	require.NoError(t, err)
+	require.Equal(t, DryRun, result.Status)
+	require.Equal(t, novaGroupID, result.Decision.CanonicalID)
+	require.Equal(t, domain.OutcomeIgnored, result.Decision.Outcome)
+
+	// An unknown source key (monitoredManga.source not in groups.yaml) cannot
+	// resolve the native id; the outcome falls back to the profile policy.
+	request.SourceKey = "nope"
+	request.Chapter.Group = comixCPNative
+	result, err = Chapter(t.Context(), zerolog.Nop(), request)
+	require.NoError(t, err)
+	require.Equal(t, "", result.Decision.CanonicalID)
+	require.Equal(t, domain.OutcomeUnknown, result.Decision.Outcome)
+
+	// Without a profile reference the decision stays empty, so dry-run logs
+	// omit the [group=... decision=...] suffix entirely.
+	request.ProfileRef = ""
+	result, err = Chapter(t.Context(), zerolog.Nop(), request)
+	require.NoError(t, err)
+	require.Equal(t, "", result.Decision.CanonicalID)
 }
 
 func TestChapterDryRunReportsWouldBeArchiveWithoutDownloading(t *testing.T) {

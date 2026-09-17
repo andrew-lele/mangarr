@@ -12,6 +12,7 @@ import (
 	"mangarr/internal/domain"
 	"mangarr/internal/files"
 	"mangarr/internal/parse"
+	"mangarr/internal/registry"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
@@ -29,6 +30,15 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 			ctx := cmd.Context()
 			if err := resolveDownloadOptions(cmd, root.configPath, options); err != nil {
 				return err
+			}
+
+			requestGroups, groupsErr := registry.LoadGroups(root.configPath)
+			if groupsErr != nil {
+				return fmt.Errorf("loading groups registry: %w", groupsErr)
+			}
+			requestProfiles, profilesErr := registry.LoadProfiles(root.configPath, &requestGroups)
+			if profilesErr != nil {
+				return fmt.Errorf("loading profiles registry: %w", profilesErr)
 			}
 
 			// init new logger
@@ -141,6 +151,7 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 
 					acquisition, err := acquire.Chapter(ctx, log, acquire.Request{
 						Source:            s,
+						SourceKey:         options.mangaSource,
 						Manga:             selectedManga,
 						Chapter:           selectedChapter,
 						DownloadDirectory: options.downloadDirectory,
@@ -148,6 +159,9 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 						TitleOverride:     options.overwrite,
 						Force:             options.force,
 						DryRun:            options.dryRun,
+						Groups:            &requestGroups,
+						Profiles:          &requestProfiles,
+						ProfileRef:        options.qualityProfile,
 					})
 					if err != nil {
 						log.Error().Err(err).Msgf("Failed to acquire chapter %s", selectedChapter.Number)
@@ -160,7 +174,7 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 						result.status = chapterStatusSkipped
 						shouldDelay = false
 					case acquire.DryRun:
-						log.Info().Msgf("Would download %q -> %q", acquisition.Name, acquisition.Path)
+						log.Info().Msgf("Would download %q -> %q%s", acquisition.Name, acquisition.Path, decisionLogSuffix(acquisition.Decision))
 						result.status = chapterStatusDryRun
 						shouldDelay = false
 					case acquire.Downloaded:

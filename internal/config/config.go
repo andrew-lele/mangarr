@@ -104,6 +104,11 @@ monitoredManga:
     #
     overwrite: "Uncle from Another World"
 
+    # qualityProfile selects the quality profile (by id or name from
+    # profiles.yaml) applied to this series' chapter group decisions
+    #
+    #qualityProfile: "f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f"
+
   # Custom name you can give the entry to easily distinguish between them
   #
   Kagurabachi:

@@ -28,6 +28,7 @@ Common flags:
 | `-o`, `--overwrite` | replace the parsed manga title in the output filename |
 | `-f`, `--force` | re-download selected chapters even if their archives already exist |
 | `--dry-run` | report which chapters would be downloaded (name + destination path) without downloading anything |
+| `--quality-profile` | select the quality profile (by id or name from profiles.yaml) applied to each chapter's group decision |
 
 Chapter selection flags are mutually exclusive:
 
@@ -49,7 +50,9 @@ Dry-run applies to both `download` (`--dry-run`) and monitor mode (`dryRun: true
 in config.yaml, or the `MANGARR__DRY_RUN` env var): each selected chapter is
 resolved through the normal pipeline up to the output archive name and path, and
 reported instead of downloaded. No pages are fetched and no files or directories
-are created.
+are created. When a quality profile is set and the chapter's scanlation group is
+registered in `groups.yaml`, the report appends `[group=<uuid> decision=<outcome>]`
+with the profile's verdict (`preferred`, `ignored`, or `unknown`) for that group.
 
 Each old archive remains in place until the replacement is downloaded and
 assembled successfully. If replacement fails, or cancellation is detected before
@@ -74,10 +77,12 @@ one snapshot without starting monitoring, watching, or rewriting the config.
 The config file must already exist. A missing selected config causes an error
 without creating a sample config, even when `MANGARR__DOWNLOAD_LOCATION` is set.
 
-The entry supplies `source`, `manga`, `group`, `language`, and `overwrite`; global
-`downloadLocation` and `namingTemplate` supply the output settings. Omitted entry
-language defaults to `en`. Explicit download flags override these values, including
-explicit empty `--group` or `--overwrite` to clear a configured value. Precedence is
+The entry supplies `source`, `manga`, `group`, `language`, `overwrite`, and
+`qualityProfile`; global `downloadLocation` and `namingTemplate` supply the output
+settings. Omitted entry language defaults to `en`; an omitted or empty
+`qualityProfile` disables group decisions for the series. Explicit download flags
+override these values, including explicit empty `--group`, `--overwrite`, or
+`--quality-profile` to clear a configured value. Precedence is
 explicit flags, then environment overrides, then YAML, then built-in defaults.
 Config validation occurs before flag overrides, so the config itself must be valid.
 Chapter selection always comes from the CLI and still defaults to latest.
@@ -166,6 +171,7 @@ monitoredManga:
     group: "310361d7-52dd-4848-9b36-2eb4fcc95e83"
     language: "en"
     overwrite: "Uncle from Another World"
+    qualityProfile: "Preferred Scanlators"
 
   Kagurabachi:
     source: "mangaplus"
@@ -175,6 +181,34 @@ logLevel: "DEBUG"
 #logPath: "/path/to/logs/mangarr.log"
 #logMaxSize: 50
 #logMaxBackups: 3
+```
+
+Config lookup order:
+
+`qualityProfile` references a profile in `profiles.yaml` (by id or name) and
+applies its `preferredGroups` / `ignoredGroups` / `fallback` policy to each
+chapter's scanlation group as it downloads. Both `groups.yaml` and
+`profiles.yaml` live next to `config.yaml` and are optional; without them, or
+with an empty `qualityProfile`, no group decisions are made and dry-run reports
+carry no `[group=...]` suffix.
+
+```yaml
+# groups.yaml: canonical group UUIDs with aliases and per-source native ids
+version: 1
+groups:
+  a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
+    aliases: [ "CP" ]
+    sources:
+      comix: "9641"
+
+# profiles.yaml: the quality profile referenced by qualityProfile
+version: 1
+profiles:
+  f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f:
+    name: "Preferred Scanlators"
+    preferredGroups: [ "CP" ]
+    ignoredGroups: [ "b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c" ]
+    fallback: "any" # "any" or "never"
 ```
 
 Config lookup order:
@@ -193,6 +227,7 @@ Environment overrides use the `MANGARR__` prefix:
 - `MANGARR__DOWNLOAD_LOCATION`
 - `MANGARR__NAMING_TEMPLATE`
 - `MANGARR__CHECK_INTERVAL`
+- `MANGARR__DRY_RUN`
 - `MANGARR__PPROF_ENABLED`
 - `MANGARR__PPROF_ADDRESS`
 - `MANGARR__LOG_LEVEL`

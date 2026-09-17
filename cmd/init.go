@@ -21,6 +21,7 @@ type downloadOptions struct {
 	group             string
 	language          string
 	chapterNumbers    string
+	qualityProfile    string
 	first             bool
 	latest            bool
 	downloadAll       bool
@@ -89,6 +90,12 @@ func initDownloadFlags(download *cobra.Command, options *downloadOptions) {
 		"l",
 		"en",
 		"specifies the language you want to download. default: en",
+	)
+	download.Flags().StringVar(
+		&options.qualityProfile,
+		"quality-profile",
+		"",
+		"select the quality profile (by id or name from profiles.yaml) applied to chapter decisions",
 	)
 
 	download.Flags().StringVarP(

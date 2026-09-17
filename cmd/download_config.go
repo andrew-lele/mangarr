@@ -39,6 +39,7 @@ func resolveDownloadOptions(cmd *cobra.Command, configPath string, options *down
 		{"overwrite", &options.overwrite, entry.Overwrite},
 		{"downloadDirectory", &options.downloadDirectory, snapshot.DownloadLocation},
 		{"naming", &options.naming, snapshot.NamingTemplate},
+		{"quality-profile", &options.qualityProfile, entry.QualityProfile},
 	}
 	for _, setting := range defaults {
 		if !cmd.Flags().Changed(setting.flag) {
