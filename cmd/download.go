@@ -96,6 +96,7 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 				chapterStatusDownloaded = "downloaded"
 				chapterStatusSkipped    = "skipped"
 				chapterStatusFailed     = "failed"
+				chapterStatusDryRun     = "dry-run"
 			)
 
 			type chapterResult struct {
@@ -146,6 +147,7 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 						NamingTemplate:    options.naming,
 						TitleOverride:     options.overwrite,
 						Force:             options.force,
+						DryRun:            options.dryRun,
 					})
 					if err != nil {
 						log.Error().Err(err).Msgf("Failed to acquire chapter %s", selectedChapter.Number)
@@ -156,6 +158,10 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 					case acquire.Skipped:
 						log.Info().Msgf("Chapter has already been downloaded, skipping %q", acquisition.Name)
 						result.status = chapterStatusSkipped
+						shouldDelay = false
+					case acquire.DryRun:
+						log.Info().Msgf("Would download %q -> %q", acquisition.Name, acquisition.Path)
+						result.status = chapterStatusDryRun
 						shouldDelay = false
 					case acquire.Downloaded:
 						log.Info().Msgf("Finished downloading %q", acquisition.Name)
@@ -170,6 +176,7 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 			downloaded := 0
 			var skipped []domain.ChapterNumber
 			var failed []domain.ChapterNumber
+			var dryRun []domain.ChapterNumber
 			for result := range results {
 				switch result.status {
 				case chapterStatusDownloaded:
@@ -178,15 +185,18 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 					skipped = append(skipped, result.chapterNumber)
 				case chapterStatusFailed:
 					failed = append(failed, result.chapterNumber)
+				case chapterStatusDryRun:
+					dryRun = append(dryRun, result.chapterNumber)
 				}
 			}
 
-			if len(selectedChapterNumbers) > 1 {
+			if len(selectedChapterNumbers) > 1 || options.dryRun {
 				log.Info().Msgf(
-					"Summary: downloaded=%d skipped=%d failed=%d",
+					"Summary: downloaded=%d skipped=%d failed=%d dry-run=%d",
 					downloaded,
 					len(skipped),
 					len(failed),
+					len(dryRun),
 				)
 
 				if len(skipped) > 0 {

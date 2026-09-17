@@ -66,6 +66,36 @@ func TestChapterDownloadsAndThenSkipsExistingArchive(t *testing.T) {
 	require.Equal(t, 1, source.calls, "skip must not resolve pages")
 }
 
+func TestChapterDryRunReportsWouldBeArchiveWithoutDownloading(t *testing.T) {
+	t.Parallel()
+
+	source := &pageSource{pages: []domain.ImageInfo{{ImageURL: "http://example.invalid/page.png"}}}
+	request := Request{
+		Source: source,
+		Manga: domain.Manga{
+			Title: "Original Title",
+		},
+		Chapter: domain.Chapter{
+			Number: mustChapterNumber("7.1"),
+			Title:  "The Chapter",
+		},
+		DownloadDirectory: t.TempDir(),
+		NamingTemplate:    "{manga:<.>} Ch. {num}{title: - <.>}",
+		TitleOverride:     "Replacement: Title",
+		DryRun:            true,
+	}
+
+	result, err := Chapter(t.Context(), zerolog.Nop(), request)
+	require.NoError(t, err)
+	require.Equal(t, DryRun, result.Status)
+	require.Equal(t, "Replacement Title Ch. 7.1 - The Chapter", result.Name)
+	require.Equal(t, filepath.Join(request.DownloadDirectory, "Replacement Title", "Replacement Title Ch. 7.1 - The Chapter.cbz"), result.Path)
+	require.Equal(t, 0, source.calls, "dry run must not resolve pages")
+	if _, err := os.Stat(result.Path); err == nil {
+		t.Fatal("dry run must not create the archive")
+	}
+}
+
 func TestChapterReturnsPageResolutionErrorWithoutPublishingArchive(t *testing.T) {
 	t.Parallel()
 

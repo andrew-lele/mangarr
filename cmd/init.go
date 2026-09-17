@@ -25,6 +25,7 @@ type downloadOptions struct {
 	latest            bool
 	downloadAll       bool
 	force             bool
+	dryRun            bool
 }
 
 func initRootFlags(root *cobra.Command, options *rootOptions) {
@@ -125,6 +126,14 @@ func initDownloadFlags(download *cobra.Command, options *downloadOptions) {
 		"f",
 		false,
 		"re-download selected chapters even if their archives already exist",
+	)
+
+	download.Flags().BoolVarP(
+		&options.dryRun,
+		"dry-run",
+		"",
+		false,
+		"list the chapters that would be downloaded without downloading them",
 	)
 
 	download.MarkFlagsMutuallyExclusive("first", "chapters")

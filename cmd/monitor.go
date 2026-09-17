@@ -159,9 +159,14 @@ func monitorManga(ctx context.Context, cfg domain.Config, mangaTitle string, mon
 		DownloadDirectory: cfg.DownloadLocation,
 		NamingTemplate:    cfg.NamingTemplate,
 		TitleOverride:     monitoredManga.Overwrite,
+		DryRun:            cfg.DryRun,
 	})
 	if err != nil {
 		return err
+	}
+	if result.Status == acquire.DryRun {
+		mLog.Info().Msgf("Would download %s -> %s", result.Name, result.Path)
+		return nil
 	}
 	if result.Status == acquire.Skipped {
 		mLog.Debug().Msgf("chapter has already been downloaded, skipping %s", result.Name)

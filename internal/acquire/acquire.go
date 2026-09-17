@@ -21,6 +21,7 @@ type Status uint8
 const (
 	Downloaded Status = iota
 	Skipped
+	DryRun
 )
 
 type PageSource interface {
@@ -35,6 +36,7 @@ type Request struct {
 	NamingTemplate    string
 	TitleOverride     string
 	Force             bool
+	DryRun            bool
 }
 
 type Result struct {
@@ -53,6 +55,14 @@ func Chapter(ctx context.Context, log zerolog.Logger, request Request) (Result, 
 	archiveName := sanitize.Filename(name) + ".cbz"
 	archivePath := filepath.Join(request.DownloadDirectory, manga.Title, archiveName)
 	result := Result{Name: name, Path: archivePath}
+
+	if request.DryRun {
+		// Dry-run: report the would-be archive without resolving pages or
+		// touching the network or disk. Sufficient to verify the chapter,
+		// group, and naming end-to-end without downloading.
+		result.Status = DryRun
+		return result, nil
+	}
 
 	if _, err := os.Stat(archivePath); err == nil {
 		if !request.Force {

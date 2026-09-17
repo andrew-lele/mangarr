@@ -10,6 +10,7 @@ type Config struct {
 	CheckInterval    time.Duration              `yaml:"checkInterval"`
 	PprofEnabled     bool                       `yaml:"pprofEnabled"`
 	PprofAddress     string                     `yaml:"pprofAddress"`
+	DryRun           bool                       `yaml:"dryRun"`
 	MonitoredManga   map[string]*MonitoredManga `yaml:"monitoredManga"`
 	LogPath          string                     `yaml:"logPath"`
 	LogLevel         string                     `yaml:"logLevel"`

@@ -57,6 +57,14 @@ pprofEnabled: false
 #
 pprofAddress: "127.0.0.1:6060"
 
+# Dry run
+# When enabled, monitor and download report which chapters would be
+# downloaded (name + destination path) without downloading anything.
+#
+# Default: false
+#
+dryRun: false
+
 # Monitored Manga
 # Define manga to monitor or select by name for a one-off download:
 # mangarr download -c . --series "One Piece" -C "1-3"
@@ -240,6 +248,7 @@ func defaultConfig(version, configFile string) domain.Config {
 		NamingTemplate: "{manga:<.>} Ch. {num:3}{title: - <.>}",
 		CheckInterval:  15,
 		PprofAddress:   "127.0.0.1:6060",
+		DryRun:         false,
 		MonitoredManga: make(map[string]*domain.MonitoredManga),
 		LogLevel:       "DEBUG",
 		LogMaxSize:     50,
@@ -346,6 +355,10 @@ func applyEnvironment(cfg *domain.Config) {
 			}
 		case prefix + "PPROF_ADDRESS":
 			cfg.PprofAddress = envPair[1]
+		case prefix + "DRY_RUN":
+			if enabled, err := strconv.ParseBool(envPair[1]); err == nil {
+				cfg.DryRun = enabled
+			}
 		case prefix + "LOG_LEVEL":
 			cfg.LogLevel = strings.ToUpper(envPair[1])
 		case prefix + "LOG_PATH":

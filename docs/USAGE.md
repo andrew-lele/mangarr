@@ -27,6 +27,7 @@ Common flags:
 | `-n`, `--naming` | filename template |
 | `-o`, `--overwrite` | replace the parsed manga title in the output filename |
 | `-f`, `--force` | re-download selected chapters even if their archives already exist |
+| `--dry-run` | report which chapters would be downloaded (name + destination path) without downloading anything |
 
 Chapter selection flags are mutually exclusive:
 
@@ -43,6 +44,12 @@ produced its path. A changed title or template can produce a new file instead.
 The `--overwrite` flag changes the manga title used for the output directory and
 filename; it does not force a download. Monitor mode has no force option and
 continues to skip existing archives.
+
+Dry-run applies to both `download` (`--dry-run`) and monitor mode (`dryRun: true`
+in config.yaml, or the `MANGARR__DRY_RUN` env var): each selected chapter is
+resolved through the normal pipeline up to the output archive name and path, and
+reported instead of downloaded. No pages are fetched and no files or directories
+are created.
 
 Each old archive remains in place until the replacement is downloaded and
 assembled successfully. If replacement fails, or cancellation is detected before
