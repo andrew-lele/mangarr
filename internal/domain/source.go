@@ -22,10 +22,15 @@ type Manga struct {
 }
 
 type Chapter struct {
-	ID        string
-	URL       string
-	Number    ChapterNumber
-	Title     string
+	ID     string
+	URL    string
+	Number ChapterNumber
+	Title  string
+	// Group is the source-specific scanlation group id carried by the
+	// chapter (comix numeric GroupID, atsumaru ScanID). It feeds the
+	// quality-profile resolver; empty means the source could not identify
+	// the group.
+	Group     string
 	ImageInfo []ImageInfo
 }
 

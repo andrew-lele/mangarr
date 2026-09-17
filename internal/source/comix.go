@@ -201,6 +201,7 @@ func (c *comix) getChapters(ctx context.Context, manga domain.Manga) error {
 				URL:    resolveComixURL(c.BaseURL, item.URL),
 				Number: item.Number,
 				Title:  sanitize.Filename(item.Name),
+				Group:  strconv.Itoa(item.GroupID),
 			}
 			processed[item.Number] = struct{}{}
 		}

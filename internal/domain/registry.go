@@ -25,13 +25,13 @@ type Group struct {
 
 // GroupRegistry holds all groups plus reverse indexes for lookup.
 //
-//   Groups[canonicalId] -> Group
-//   AliasIndex[lowercased alias] -> canonicalId
-//   NativeIndex["<source>:<nativeId>"] -> canonicalId
+//	Groups[canonicalId] -> Group
+//	AliasIndex[lowercased alias] -> canonicalId
+//	NativeIndex["<source>:<nativeId>"] -> canonicalId
 type GroupRegistry struct {
 	Groups map[string]*Group `yaml:"groups"`
 
-	AliasIndex map[string]string
+	AliasIndex  map[string]string
 	NativeIndex map[string]string
 }
 
@@ -47,4 +47,20 @@ type Profile struct {
 // ProfileRegistry holds all profiles plus an id index.
 type ProfileRegistry struct {
 	Profiles map[string]*Profile `yaml:"profiles"`
+}
+
+// Decision outcomes for resolving a chapter's group against a quality profile.
+const (
+	OutcomePreferred = "preferred" // group is listed in the profile's preferredGroups
+	OutcomeIgnored   = "ignored"   // group is rejected (ignoredGroups or fallback never)
+	OutcomeUnknown   = "unknown"   // group is not classified; accepted only under fallback any
+)
+
+// Decision is the download-time verdict for a chapter's scanlation group,
+// produced by the resolver from the group's native id, the source name, and a
+// quality profile.
+type Decision struct {
+	Outcome        string // OutcomePreferred, OutcomeIgnored, or OutcomeUnknown
+	PreferredIndex int    // index into the profile's preferredGroups; -1 unless preferred
+	CanonicalID    string // canonical UUID the native id resolved to; "" when unresolvable
 }

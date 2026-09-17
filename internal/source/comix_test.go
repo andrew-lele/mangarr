@@ -208,6 +208,7 @@ func TestComixChaptersPaginatesAndFiltersGroup(t *testing.T) {
 	require.Len(t, manga.Chapters, 2)
 	require.Equal(t, "101", manga.Chapters[mustChapterNumber("11")].ID)
 	require.Equal(t, server.URL+"/chapter/2", manga.Chapters[mustChapterNumber("10")].URL)
+	require.Equal(t, "6594", manga.Chapters[mustChapterNumber("11")].Group)
 }
 
 func TestComixPagesNormalizesCompactPages(t *testing.T) {

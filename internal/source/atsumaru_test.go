@@ -106,11 +106,13 @@ func TestAtsumaruDiscover(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "chapter-0", ch0.ID)
 	require.Equal(t, "Chapter 0", ch0.Title)
+	require.Equal(t, "scan-1", ch0.Group)
 
 	ch71, ok := manga.Chapters[mustChapterNumber("7.1")]
 	require.True(t, ok)
 	require.Equal(t, "chapter-7-1", ch71.ID)
 	require.Equal(t, "Chapter 7.1", ch71.Title)
+	require.Equal(t, "scan-1", ch71.Group)
 }
 
 func TestAtsumaruDiscoverErrorsWhenScanIDHasNoChapters(t *testing.T) {

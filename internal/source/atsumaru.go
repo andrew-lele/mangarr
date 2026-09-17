@@ -134,6 +134,7 @@ func (a *atsumaru) Discover(ctx context.Context) (domain.Manga, error) {
 			ID:     chapter.ID,
 			Number: chapter.Number,
 			Title:  sanitize.Filename(chapter.Title),
+			Group:  chapter.ScanID,
 		}
 	}
 
