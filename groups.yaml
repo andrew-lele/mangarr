@@ -15,7 +15,7 @@ version: 1
 
 groups:
   a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
-    aliases: [ "CP", "Comic Zen" ]
+    aliases: [ "Comic Zen" ]
     sources:
       comix: "9641"
 

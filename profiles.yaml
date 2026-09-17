@@ -15,12 +15,12 @@
 version: 1
 
 profiles:
-  # "Comix Preferred": prefer CP (9641) then Asura (4725); hard-block the two
+  # "Comix Preferred": prefer Comic Zen (9641) then Asura (4725); hard-block the two
   # LQ groups from the group registry.
   f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f:
     name: "Comix Preferred"
     preferredGroups:
-      - "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b"   # CP
+      - "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b"   # Comic Zen
       - "b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c"   # Asura Scans
     ignoredGroups:
       - "c3fd0e5a-6b12-4e74-9d9c-9f4a6e3c1b5d"   # TL Mayhem

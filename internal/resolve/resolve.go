@@ -42,6 +42,7 @@ func Resolve(groups *domain.GroupRegistry, profiles *domain.ProfileRegistry, sou
 
 	canonicalID := registry.ResolveGroupID(groups, source+":"+nativeGroup)
 	decision.CanonicalID = canonicalID
+	decision.GroupName = groupName(groups, canonicalID)
 
 	if canonicalID == "" {
 		decision.Outcome = outcomeForUnlisted(profile)
@@ -101,4 +102,14 @@ func outcomeForUnlisted(profile *domain.Profile) string {
 		return domain.OutcomeIgnored
 	}
 	return domain.OutcomeUnknown
+}
+
+// groupName returns the first human alias of the group with the given
+// canonical id, or "" when the group is not in the registry.
+func groupName(groups *domain.GroupRegistry, canonicalID string) string {
+	group, ok := groups.Groups[canonicalID]
+	if !ok || group == nil || len(group.Aliases) == 0 {
+		return ""
+	}
+	return group.Aliases[0]
 }

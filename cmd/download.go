@@ -174,7 +174,7 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 						result.status = chapterStatusSkipped
 						shouldDelay = false
 					case acquire.DryRun:
-						log.Info().Msgf("Would download %q -> %q%s", acquisition.Name, acquisition.Path, decisionLogSuffix(acquisition.Decision))
+						log.Info().Msgf("Would download %q -> %q%s", acquisition.Name, acquisition.Path, decisionLogSuffix(acquisition.SourceKey, acquisition.Decision))
 						result.status = chapterStatusDryRun
 						shouldDelay = false
 					case acquire.Downloaded:

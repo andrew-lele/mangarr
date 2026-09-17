@@ -106,14 +106,20 @@ func resetTimer(timer *time.Timer, duration time.Duration) {
 	timer.Reset(duration)
 }
 
-// decisionLogSuffix renders the [group=<uuid> decision=<outcome>] suffix for
-// dry-run reports. An empty canonical id (unset profile, unknown native id,
-// or a chapter without a group) yields "" so the suffix is omitted entirely.
-func decisionLogSuffix(decision domain.Decision) string {
-	if decision.CanonicalID == "" {
-		return ""
+// decisionLogSuffix renders the [source=<key> group=<alias> decision=<outcome>]
+// suffix for dry-run reports. An empty canonical id (unset profile, unknown
+// native id, or a chapter without a group) yields a source-only suffix so the
+// selection is still visible.
+func decisionLogSuffix(sourceKey string, decision domain.Decision) string {
+	suffix := fmt.Sprintf(" [source=%s", sourceKey)
+	if decision.CanonicalID != "" {
+		group := decision.GroupName
+		if group == "" {
+			group = decision.CanonicalID
+		}
+		suffix = suffix + fmt.Sprintf(" group=%s decision=%s", group, decision.Outcome)
 	}
-	return fmt.Sprintf(" [group=%s decision=%s]", decision.CanonicalID, decision.Outcome)
+	return suffix + "]"
 }
 
 // runMonitorCycle checks every configured manga once. Groups and profiles are
@@ -195,7 +201,7 @@ func monitorManga(ctx context.Context, cfg domain.Config, groups *domain.GroupRe
 		return err
 	}
 	if result.Status == acquire.DryRun {
-		mLog.Info().Msgf("Would download %s -> %s%s", result.Name, result.Path, decisionLogSuffix(result.Decision))
+		mLog.Info().Msgf("Would download %s -> %s%s", result.Name, result.Path, decisionLogSuffix(result.SourceKey, result.Decision))
 		return nil
 	}
 	if result.Status == acquire.Skipped {

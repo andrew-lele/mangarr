@@ -78,10 +78,10 @@ func TestRunMonitorCycleErrorIncludesConfiguredSource(t *testing.T) {
 func TestDecisionSuffix(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, "", decisionLogSuffix(domain.Decision{}))
-	require.Equal(t, "", decisionLogSuffix(domain.Decision{Outcome: domain.OutcomeUnknown}))
-	require.Equal(t, " [group=a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b decision=preferred]", decisionLogSuffix(domain.Decision{Outcome: domain.OutcomePreferred, PreferredIndex: 0, CanonicalID: "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b"}))
-	require.Equal(t, " [group=b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c decision=ignored]", decisionLogSuffix(domain.Decision{Outcome: domain.OutcomeIgnored, PreferredIndex: -1, CanonicalID: "b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c"}))
+	require.Equal(t, " [source=comix]", decisionLogSuffix("comix", domain.Decision{}))
+	require.Equal(t, " [source=comix]", decisionLogSuffix("comix", domain.Decision{Outcome: domain.OutcomeUnknown}))
+	require.Equal(t, " [source=comix group=Comic Zen decision=preferred]", decisionLogSuffix("comix", domain.Decision{Outcome: domain.OutcomePreferred, PreferredIndex: 0, CanonicalID: "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b", GroupName: "Comic Zen"}))
+	require.Equal(t, " [source=comix group=b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c decision=ignored]", decisionLogSuffix("comix", domain.Decision{Outcome: domain.OutcomeIgnored, PreferredIndex: -1, CanonicalID: "b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c"}))
 }
 
 func TestMonitorDryRunReportsWouldBeDownload(t *testing.T) {
@@ -108,7 +108,7 @@ func TestMonitorDryRunReportsWouldBeDownload(t *testing.T) {
 	}
 
 	entry := runCycleCapturingLog(t, cfg)
-	expected := "Would download Fixture Ch. 2 -> " + filepath.Join(cfg.DownloadLocation, "Fixture", "Fixture Ch. 2.cbz")
+	expected := "Would download Fixture Ch. 2 -> " + filepath.Join(cfg.DownloadLocation, "Fixture", "Fixture Ch. 2.cbz") + " [source=cubari]"
 	if got := entry["message"]; got != expected {
 		t.Fatalf("message = %v, want %s", got, expected)
 	}

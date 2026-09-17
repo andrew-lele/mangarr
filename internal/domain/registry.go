@@ -63,4 +63,5 @@ type Decision struct {
 	Outcome        string // OutcomePreferred, OutcomeIgnored, or OutcomeUnknown
 	PreferredIndex int    // index into the profile's preferredGroups; -1 unless preferred
 	CanonicalID    string // canonical UUID the native id resolved to; "" when unresolvable
+	GroupName      string // primary human-readable alias of the resolved group; "" when unresolvable
 }

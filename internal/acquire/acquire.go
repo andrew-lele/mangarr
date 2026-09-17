@@ -45,10 +45,11 @@ type Request struct {
 }
 
 type Result struct {
-	Status   Status
-	Name     string
-	Path     string
-	Decision domain.Decision
+	Status    Status
+	Name      string
+	Path      string
+	SourceKey string
+	Decision  domain.Decision
 }
 
 func Chapter(ctx context.Context, log zerolog.Logger, request Request) (Result, error) {
@@ -60,7 +61,7 @@ func Chapter(ctx context.Context, log zerolog.Logger, request Request) (Result, 
 	name := templater.New(manga, request.Chapter).ExecTemplate(request.NamingTemplate)
 	archiveName := sanitize.Filename(name) + ".cbz"
 	archivePath := filepath.Join(request.DownloadDirectory, manga.Title, archiveName)
-	result := Result{Name: name, Path: archivePath}
+	result := Result{Name: name, Path: archivePath, SourceKey: request.SourceKey}
 
 	if request.Profiles != nil && request.ProfileRef != "" {
 		result.Decision = resolve.Resolve(
