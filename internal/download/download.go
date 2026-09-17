@@ -45,11 +45,19 @@ func Chapter(ctx context.Context, log zerolog.Logger, outputPath string, chapter
 		Int("image_total", len(chapter.ImageInfo)).
 		Logger()
 
-	g, ctx := errgroup.WithContext(ctx)
+	g := &errgroup.Group{}
 	g.SetLimit(maxConcurrentImageDownloads)
 
 	for i, img := range chapter.ImageInfo {
 		g.Go(func() error {
+			// Each image downloads under its own child context of the caller's
+			// ctx, so Ctrl-C still cancels every in-flight image while one
+			// image's failure does not cancel its siblings (errgroup.WithContext
+			// would cancel the shared ctx on the first error and abort every
+			// other writer with 'context canceled').
+			imageCtx, stop := context.WithCancel(ctx)
+			defer stop()
+
 			imageIndex := i + 1
 			base := filepath.Join(tmpDir, fmt.Sprintf("%03d", imageIndex))
 			imageLog := chapterLog.With().
@@ -61,10 +69,17 @@ func Chapter(ctx context.Context, log zerolog.Logger, outputPath string, chapter
 				Str("tmp_name", filepath.Base(base)).
 				Logger()
 
-			return downloadImage(ctx, imageLog, img, base, imageIndex, len(chapter.ImageInfo))
+			err := downloadImage(imageCtx, imageLog, img, base, imageIndex, len(chapter.ImageInfo))
+			if err != nil {
+				imageLog.Error().Err(err).Msg("image download failed")
+			}
+			return err
 		})
 	}
 
+	// Wait returns only after every image has finished, so sibling downloads
+	// are never interrupted; the first (image-indexed) error then fails the
+	// chapter. Sibling failures stay visible through the per-image error logs.
 	if err := g.Wait(); err != nil {
 		return err
 	}

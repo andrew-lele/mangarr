@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"mangarr/internal/domain"
 	"mangarr/internal/sharedhttp"
@@ -151,6 +152,56 @@ func TestDownloadImageStopsAfterThreeAttemptsOnPermanentFailure(t *testing.T) {
 	err := downloadImage(t.Context(), zerolog.Nop(), domain.ImageInfo{ImageURL: server.URL}, outBase, 1, 1)
 	require.Error(t, err)
 	require.Equal(t, int32(sharedhttp.RetryAttempts), attempts.Load())
+}
+
+func TestChapterImageFailureDoesNotCancelSiblingDownloads(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte("sibling-image-payload")
+	var goodCompleted atomic.Int32
+	var badRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bad.png" {
+			badRequests.Add(1)
+			http.NotFound(w, r)
+			return
+		}
+
+		// Stream byte-by-byte so the failing image errors while siblings are
+		// mid-write; their downloads must finish uncanceled.
+		w.Header().Set("Content-Type", "image/png")
+		for _, chunk := range payload {
+			_, _ = w.Write([]byte{chunk})
+			time.Sleep(5 * time.Millisecond)
+		}
+		goodCompleted.Add(1)
+	}))
+	defer server.Close()
+
+	number, parseErr := domain.ParseChapterNumber("1")
+	require.NoError(t, parseErr)
+
+	err := Chapter(t.Context(), zerolog.Nop(), filepath.Join(t.TempDir(), "chapter.cbz"),
+		domain.Chapter{
+			Number: number,
+			Title:  "Fixture",
+			ImageInfo: []domain.ImageInfo{
+				{ImageURL: server.URL + "/bad.png"},
+				{ImageURL: server.URL + "/good-a.png"},
+				{ImageURL: server.URL + "/good-b.png"},
+			},
+		},
+		false,
+		func(log zerolog.Logger, tmpDir, outPath string, isManhwa bool) error {
+			t.Fatal("archive writer must not run when an image fails")
+			return nil
+		},
+	)
+	require.ErrorContains(t, err, "image 1/3")
+	require.ErrorContains(t, err, "/bad.png")
+	require.NotContains(t, err.Error(), "canceled")
+	require.Equal(t, int32(2), goodCompleted.Load())
+	require.Equal(t, int32(1), badRequests.Load())
 }
 
 func xorBytes(data, key []byte) []byte {

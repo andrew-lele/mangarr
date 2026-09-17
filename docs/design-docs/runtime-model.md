@@ -28,7 +28,9 @@ temporary file, checks cancellation, and renames the file into place.
 
 - chapter jobs fan out in `download`
 - source jobs fan out per tick in `monitor`
-- image downloads fan out inside `internal/download`
+- image downloads fan out inside `internal/download`; each image fails
+  independently — a failed image fails the chapter, but sibling downloads are
+  never canceled and finish first (caller cancellation still aborts all of them)
 
 Each layer has an explicit concurrency limit. The code favors bounded parallelism over unbounded goroutine fan-out.
 
