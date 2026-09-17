@@ -1,0 +1,36 @@
+# groups.yaml — canonical scanlation-group registry for MangaRR.
+#
+# Keyed by canonical OPAQUE UUID (stable identity). Each entry holds
+# human-readable `aliases` and per-source NATIVE ids:
+#   comix    -> numeric group id   (GroupID, used as ?group_id=)
+#   atsumaru -> scan id            (ScanID)
+#   mangadex -> scanlation uuid    (future)
+#
+# Profiles (profiles.yaml) reference canonical UUIDs or aliases only, so one
+# profile works across every source. The loader resolves alias -> UUID at
+# config-load time; downstream code compares canonical UUIDs.
+#
+# To add a source later (e.g. mangadex), extend `sources:` on the group entry.
+version: 1
+
+groups:
+  a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
+    aliases: [ "CP", "Comic Zen" ]
+    sources:
+      comix: "9641"
+
+  b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c:
+    aliases: [ "Asura Scans", "Asura" ]
+    sources:
+      comix: "4725"
+      # mangadex: "uuid-placeholder"     # fill when mapped
+
+  c3fd0e5a-6b12-4e74-9d9c-9f4a6e3c1b5d:
+    aliases: [ "TL Mayhem" ]
+    sources:
+      comix: "9388"
+
+  d4ae1f6b-7c23-4f85-ae0d-0a5b7f4d2c6e:
+    aliases: [ "LQ Bunch" ]
+    sources:
+      comix: "462"

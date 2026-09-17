@@ -1,0 +1,34 @@
+# profiles.yaml — MangaRR quality profiles.
+#
+# Keyed by canonical profile UUID. Profiles select which scanlation groups a
+# monitored manga downloads from. They reference canonical group IDs
+# (groups.yaml) by UUID or alias — never source-native IDs — so a single
+# profile works across all sources.
+#
+# Resolution (per chapter at download time):
+#   1. source returns the chapter's native group id (e.g. comix GroupID=4725)
+#   2. groups.yaml maps native id -> canonical UUID
+#   3. this file decides: preferred (ordered), ignored (never), unknown (floor)
+#
+# Unknown groups = allowed but lowest preference (Sonarr convention), unless
+# `fallback: never` — then only preferred/known groups are accepted.
+version: 1
+
+profiles:
+  # "Comix Preferred": prefer CP (9641) then Asura (4725); hard-block the two
+  # LQ groups from the group registry.
+  f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f:
+    name: "Comix Preferred"
+    preferredGroups:
+      - "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b"   # CP
+      - "b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c"   # Asura Scans
+    ignoredGroups:
+      - "c3fd0e5a-6b12-4e74-9d9c-9f4a6e3c1b5d"   # TL Mayhem
+      - "d4ae1f6b-7c23-4f85-ae0d-0a5b7f4d2c6e"   # LQ Bunch
+    fallback: "any"
+
+  8c3a5f2b-6d4e-4a1f-9c7b-3e2a8d5f1b6c:
+    name: "Default"
+    preferredGroups: [ ]
+    ignoredGroups: [ ]
+    fallback: "any"
