@@ -124,15 +124,34 @@ func (w *weebcentral) getChapters(ctx context.Context, manga domain.Manga) error
 		errors = append(errors, fmt.Errorf("requesting URL %s: %w", r.Request.URL, err))
 	})
 
-	c.OnHTML("a.flex", func(e *colly.HTMLElement) {
-		chapterURL, err := resolveAgainstBase(w.BaseURL, e.Attr("href"))
+	// The chapter list now lives on the SERIES page itself; the
+	// /full-chapter-list endpoint answers with a 404 page wrapper and the
+	// old 'a.flex' + span.grow selectors match nothing (field-verified on
+	// jihun, 2026-09-18). Current anchor markup:
+	//
+	//	<a href="/chapters/01K7JP7T3V8ZVZJSGF99FFH55K"
+	//	   class="hover:bg-base-300 flex-1 flex items-center p-2">Chapter 147 Last Read</a>
+	//
+	// Only anchors whose href is a /chapters/<id> link are chapter rows;
+	// everything else on the page (navbar, related series, the "See all
+	// chapters" link pointing at /series/.../full-chapter-list) is skipped.
+	// The inner text may carry a trailing "Last Read" marker; the chapter
+	// number regex only consumes the "Chapter N" prefix. If the series page
+	// ever truncates the list to recent chapters instead of serving all of
+	// them, re-follow the /series/.../full-chapter-list link here.
+	c.OnHTML("a", func(e *colly.HTMLElement) {
+		href := e.Attr("href")
+		if !strings.HasPrefix(href, "/chapters/") {
+			return
+		}
+
+		chapterURL, err := resolveAgainstBase(w.BaseURL, href)
 		if err != nil {
 			errors = append(errors, fmt.Errorf("resolving chapter URL: %w", err))
 			return
 		}
 
-		name := e.ChildText("span.grow")
-		number, err := w.getChapterNumber(name)
+		number, err := w.getChapterNumber(e.Text)
 		if err != nil {
 			// Skip chapters that don't match the regex pattern instead of failing
 			return
@@ -144,12 +163,7 @@ func (w *weebcentral) getChapters(ctx context.Context, manga domain.Manga) error
 		}
 	})
 
-	path, err := url.JoinPath(w.MangaURL, "full-chapter-list")
-	if err != nil {
-		return fmt.Errorf("building URL: %w", err)
-	}
-
-	err = c.Visit(path)
+	err := c.Visit(w.MangaURL)
 	if err != nil {
 		return fmt.Errorf("visiting URL %s: %w", w.MangaURL, err)
 	}
