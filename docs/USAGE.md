@@ -211,6 +211,20 @@ profiles:
     fallback: "any" # "any" or "never"
 ```
 
+Atsumaru is the exception to the per-source native-id model: its scan ids
+are scoped PER-MANGA (the same group has a different id on every manga), so
+`atsumaru: <id>` entries in `sources` cannot match chapters. Mangarr instead
+resolves Atsumaru chapters by scanlator NAME: `mangarr groups atsumaru -m
+<manga-url>` shows the names, and the group's chapter resolves whenever that
+name is registered as an **alias** of a canonical group (case-insensitive):
+
+```yaml
+version: 1
+groups:
+  a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
+    aliases: [ "Asura" ]
+```
+
 Config lookup order:
 
 1. If `-c` is set, mangarr reads `<config-dir>/config.yaml`.

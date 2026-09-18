@@ -32,3 +32,31 @@ func Select(monitoredManga domain.MonitoredManga) (domain.Source, error) {
 
 	return newSource(monitoredManga), nil
 }
+
+// nativeResolvers maps source names to factories that close a per-source
+// native-id resolver extension over the concrete source adapter instance.
+// Sources whose native group ids are GLOBAL (comix numeric GroupID, mangadex
+// scanlation UUID) have no entry and keep the default NativeIndex lookup in
+// internal/resolve. atsumaru's ids are scoped per-manga, so its resolver
+// bridges the chapter ScanID through the adapter's scanlator cache.
+var nativeResolvers = map[string]func(domain.Source) domain.NativeResolver{
+	"atsumaru": func(s domain.Source) domain.NativeResolver {
+		return func(groups *domain.GroupRegistry, nativeGroup string) string {
+			return s.(*atsumaru).ResolveNativeGroup(groups, nativeGroup)
+		}
+	},
+}
+
+// NewNativeGroupResolver returns the per-source native-id resolver extension
+// for sourceKey closed over the adapter instance s, or nil when the source
+// has no extension (the caller then uses the default NativeIndex lookup).
+// Pass the same source instance that is used for the chapter acquisition so
+// per-manga data (atsumaru scanlators) is available to the resolver.
+func NewNativeGroupResolver(sourceKey string, s domain.Source) domain.NativeResolver {
+	factory, ok := nativeResolvers[sourceKey]
+	if !ok {
+		return nil
+	}
+
+	return factory(s)
+}

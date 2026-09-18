@@ -185,17 +185,18 @@ func monitorManga(ctx context.Context, cfg domain.Config, groups *domain.GroupRe
 	}
 
 	result, err := acquire.Chapter(ctx, mLog, acquire.Request{
-		Source:            mangaSource,
-		SourceKey:         monitoredManga.Source,
-		Manga:             selectedManga,
-		Chapter:           selectedChapter,
-		DownloadDirectory: cfg.DownloadLocation,
-		NamingTemplate:    cfg.NamingTemplate,
-		TitleOverride:     monitoredManga.Overwrite,
-		DryRun:            cfg.DryRun,
-		Groups:            groups,
-		Profiles:          profiles,
-		ProfileRef:        monitoredManga.QualityProfile,
+		Source:             mangaSource,
+		SourceKey:          monitoredManga.Source,
+		Manga:              selectedManga,
+		Chapter:            selectedChapter,
+		DownloadDirectory:  cfg.DownloadLocation,
+		NamingTemplate:     cfg.NamingTemplate,
+		TitleOverride:      monitoredManga.Overwrite,
+		DryRun:             cfg.DryRun,
+		Groups:             groups,
+		Profiles:           profiles,
+		ProfileRef:         monitoredManga.QualityProfile,
+		ResolveNativeGroup: source.NewNativeGroupResolver(monitoredManga.Source, mangaSource),
 	})
 	if err != nil {
 		return err

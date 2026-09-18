@@ -4,11 +4,16 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"mangarr/internal/domain"
+	"mangarr/internal/resolve"
+
+	groupregistry "mangarr/internal/registry"
 
 	"github.com/stretchr/testify/require"
 )
@@ -76,19 +81,26 @@ func TestAtsumaruDiscover(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/manga/info", r.URL.Path)
-		require.Equal(t, "Q5Mqy", r.URL.Query().Get("mangaId"))
+		switch r.URL.Path {
+		case "/api/manga/info":
+			require.Equal(t, "Q5Mqy", r.URL.Query().Get("mangaId"))
 
-		fmt.Fprint(w, `{
-			"id": "Q5Mqy",
-			"title": "Kagurabachi",
-			"forceStrip": true,
-			"chapters": [
-				{"id": "chapter-0", "title": "Chapter 0", "number": 0, "scanId": "scan-1"},
-				{"id": "chapter-7-1", "title": "Chapter 7.1", "number": 7.1, "scanId": "scan-1"},
-				{"id": "chapter-7-1-other", "title": "Chapter 7.1", "number": 7.1, "scanId": "scan-2"}
-			]
-		}`)
+			fmt.Fprint(w, `{
+				"id": "Q5Mqy",
+				"title": "Kagurabachi",
+				"forceStrip": true,
+				"chapters": [
+					{"id": "chapter-0", "title": "Chapter 0", "number": 0, "scanId": "scan-1"},
+					{"id": "chapter-7-1", "title": "Chapter 7.1", "number": 7.1, "scanId": "scan-1"},
+					{"id": "chapter-7-1-other", "title": "Chapter 7.1", "number": 7.1, "scanId": "scan-2"}
+				]
+			}`)
+		case "/api/manga/page":
+			require.Equal(t, "Q5Mqy", r.URL.Query().Get("id"))
+			fmt.Fprint(w, `{"mangaPage":{"scanlators":[{"id":"scan-1","name":"Alpha"}]}}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
 	}))
 	defer server.Close()
 
@@ -101,6 +113,9 @@ func TestAtsumaruDiscover(t *testing.T) {
 	require.Equal(t, "Kagurabachi", manga.Title)
 	require.True(t, manga.IsManhwa)
 	require.Len(t, manga.Chapters, 2)
+	// Discovery loads the scanlator cache that feeds the group resolver
+	// bridge: scoped ScanIDs map to stable names.
+	require.Equal(t, []domain.ScanlationGroup{{ID: "scan-1", Name: "Alpha"}}, src.Scanlators)
 
 	ch0, ok := manga.Chapters[mustChapterNumber("0")]
 	require.True(t, ok)
@@ -118,14 +133,21 @@ func TestAtsumaruDiscover(t *testing.T) {
 func TestAtsumaruDiscoverErrorsWhenScanIDHasNoChapters(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{
-			"id": "Q5Mqy",
-			"title": "Kagurabachi",
-			"chapters": [
-				{"id": "chapter-1", "title": "Chapter 1", "number": 1, "scanId": "scan-2"}
-			]
-		}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/manga/info":
+			fmt.Fprint(w, `{
+				"id": "Q5Mqy",
+				"title": "Kagurabachi",
+				"chapters": [
+					{"id": "chapter-1", "title": "Chapter 1", "number": 1, "scanId": "scan-2"}
+				]
+			}`)
+		case "/api/manga/page":
+			fmt.Fprint(w, `{"mangaPage":{"scanlators":[{"id":"scan-2","name":"Delta"}]}}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
 	}))
 	defer server.Close()
 
@@ -138,8 +160,15 @@ func TestAtsumaruDiscoverErrorsWhenScanIDHasNoChapters(t *testing.T) {
 func TestAtsumaruDiscoverErrorsWhenNoChapters(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"id":"Q5Mqy","title":"Kagurabachi","chapters":[]}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/manga/info":
+			fmt.Fprint(w, `{"id":"Q5Mqy","title":"Kagurabachi","chapters":[]}`)
+		case "/api/manga/page":
+			fmt.Fprint(w, `{"mangaPage":{"scanlators":[]}}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
 	}))
 	defer server.Close()
 
@@ -318,6 +347,77 @@ func TestAtsumaruGroupsRequiresMangaURL(t *testing.T) {
 	require.EqualError(t, err, "listing Atsumaru groups requires a manga URL")
 }
 
+func TestAtsumaruResolveNativeGroupBridgesScanIDThroughName(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"mangaPage":{"scanlators":[
+			{"id":"scoped-asura","name":"Asura"},
+			{"id":"scoped-webtoon","name":"Webtoon"}
+		]}}`)
+	}))
+	defer server.Close()
+
+	src := newTestAtsumaru(server.URL + "/manga/Q5Mqy")
+	require.NoError(t, src.loadScanlators(t.Context()))
+
+	groups := writeAtsumaruGroups(t, `version: 1
+
+groups:
+  a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
+    aliases: [ "Asura" ]
+`)
+
+	// The chapter's scoped ScanID bridges to the scanlator name, then the
+	// name resolves through the registry's AliasIndex to the canonical UUID.
+	require.Equal(t, "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b", src.ResolveNativeGroup(&groups, "scoped-asura"))
+	// A scoped id whose name is not registered resolves to nothing.
+	require.Equal(t, "", src.ResolveNativeGroup(&groups, "scoped-webtoon"))
+	// An unknown scoped id resolves to nothing either.
+	require.Equal(t, "", src.ResolveNativeGroup(&groups, "scoped-unknown"))
+	require.Equal(t, "", src.ResolveNativeGroup(&groups, "  "))
+}
+
+func TestAtsumaruDecisionPreferredThroughRealResolver(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"mangaPage":{"scanlators":[{"id":"scoped-asura","name":"Asura"}]}}`)
+	}))
+	defer server.Close()
+
+	src := newTestAtsumaru(server.URL + "/manga/Q5Mqy")
+	require.NoError(t, src.loadScanlators(t.Context()))
+
+	groups := writeAtsumaruGroups(t, `version: 1
+
+groups:
+  a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
+    aliases: [ "Asura" ]
+`)
+	profiles := writeAtsumaruProfiles(t, `version: 1
+
+profiles:
+  f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f:
+    name: "Preferred Scanlators"
+    preferredGroups: [ "Asura" ]
+    ignoredGroups: [ ]
+    fallback: "any"
+`, &groups)
+	resolver := func(groups *domain.GroupRegistry, nativeGroup string) string {
+		return src.ResolveNativeGroup(groups, nativeGroup)
+	}
+	decision := resolve.ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-asura", "f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f", resolver)
+	require.Equal(t, domain.OutcomePreferred, decision.Outcome)
+	require.Equal(t, 0, decision.PreferredIndex)
+	require.Equal(t, "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b", decision.CanonicalID)
+
+	// Without the extension the scoped id never resolves.
+	decision = resolve.ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-asura", "f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f", nil)
+	require.Equal(t, domain.OutcomeUnknown, decision.Outcome)
+	require.Equal(t, "", decision.CanonicalID)
+}
+
 func newTestAtsumaru(mangaURL string) *atsumaru {
 	return &atsumaru{
 		MangaURL: mangaURL,
@@ -326,5 +426,34 @@ func newTestAtsumaru(mangaURL string) *atsumaru {
 		Client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+	}
+}
+
+func writeAtsumaruGroups(t *testing.T, groupsYAML string) domain.GroupRegistry {
+	t.Helper()
+
+	root := t.TempDir()
+	writeFile(t, root, groupregistry.GroupsFileName, groupsYAML)
+
+	groups, err := groupregistry.LoadGroups(root)
+	require.NoError(t, err)
+	return groups
+}
+
+func writeAtsumaruProfiles(t *testing.T, profilesYAML string, groups *domain.GroupRegistry) domain.ProfileRegistry {
+	t.Helper()
+
+	root := t.TempDir()
+	writeFile(t, root, groupregistry.ProfilesFileName, profilesYAML)
+
+	profiles, err := groupregistry.LoadProfiles(root, groups)
+	require.NoError(t, err)
+	return profiles
+}
+
+func writeFile(t *testing.T, root, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

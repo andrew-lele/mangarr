@@ -42,6 +42,11 @@ type Request struct {
 	Groups            *domain.GroupRegistry
 	Profiles          *domain.ProfileRegistry
 	ProfileRef        string
+	// ResolveNativeGroup is the optional per-source native-id resolver
+	// extension (atsumaru: scoped ScanID -> canonical group via the
+	// scanlator-name alias bridge). nil keeps the default NativeIndex
+	// lookup in resolve.
+	ResolveNativeGroup domain.NativeResolver
 }
 
 type Result struct {
@@ -64,12 +69,13 @@ func Chapter(ctx context.Context, log zerolog.Logger, request Request) (Result, 
 	result := Result{Name: name, Path: archivePath, SourceKey: request.SourceKey}
 
 	if request.Profiles != nil && request.ProfileRef != "" {
-		result.Decision = resolve.Resolve(
+		result.Decision = resolve.ResolveWithResolver(
 			request.Groups,
 			request.Profiles,
 			request.SourceKey,
 			request.Chapter.Group,
 			request.ProfileRef,
+			request.ResolveNativeGroup,
 		)
 	}
 

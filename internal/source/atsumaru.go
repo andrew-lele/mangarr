@@ -13,6 +13,8 @@ import (
 	"mangarr/internal/sanitize"
 	"mangarr/internal/sharedhttp"
 
+	groupregistry "mangarr/internal/registry"
+
 	"github.com/avast/retry-go"
 )
 
@@ -23,6 +25,13 @@ type atsumaru struct {
 	ScanID   string
 	Client   *http.Client
 	BaseURL  string
+
+	// Scanlators caches the manga page's scanlation groups (scoped ScanID +
+	// stable name) once fetched, in reader order. The cache feeds the group
+	// resolver bridge (ResolveNativeGroup): atsumaru ScanIDs are scoped
+	// per-manga, so a chapter's ScanID resolves to a canonical group via its
+	// scanlator NAME, never via a global native-id map.
+	Scanlators []domain.ScanlationGroup
 }
 
 type atsumaruMangaResponse struct {
@@ -129,6 +138,15 @@ func (a *atsumaru) Discover(ctx context.Context) (domain.Manga, error) {
 		return domain.Manga{}, fmt.Errorf("getting manga info from %s: %w", apiURL, err)
 	}
 
+	// Load the scanlator cache now so the group resolver bridge can map the
+	// chapters' scoped ScanIDs to canonical groups by name at resolve time
+	// (resolve.Resolve is pure and runs after Discover). A page-fetch failure
+	// is non-fatal: chapters still download, and resolution degrades to
+	// unresolvable instead of blocking the manga.
+	if err := a.loadScanlators(ctx); err != nil {
+		_ = err
+	}
+
 	if len(mangaResp.Title) == 0 {
 		return domain.Manga{}, fmt.Errorf("getting manga for ID %s", mangaID)
 	}
@@ -201,42 +219,97 @@ func (a *atsumaru) Pages(ctx context.Context, chapter domain.Chapter) ([]domain.
 }
 
 // Groups lists the manga's scanlation groups from the manga page endpoint
-// (mangaPage.scanlators). Atsumaru has no global group catalog: a scan ID is
-// the ScanID a manga's chapters carry and maps to the manga's own
-// translators, so the manga URL is required input. query filters the
-// scanlators client-side (case-insensitive substring on name); the returned
-// order is the reader's order (primary translator first).
+// (mangaPage.scanlators), cached for reuse. Atsumaru has no global group
+// catalog: a scan ID is the ScanID a manga's chapters carry and maps to the
+// manga's own translators, so the manga URL is required input. query filters
+// the scanlators client-side (case-insensitive substring on name); the
+// returned order is the reader's order (primary translator first).
 func (a *atsumaru) Groups(ctx context.Context, query string) ([]domain.ScanlationGroup, error) {
 	if a.MangaURL == "" {
 		return nil, fmt.Errorf("listing Atsumaru groups requires a manga URL")
 	}
+	if err := a.loadScanlators(ctx); err != nil {
+		return nil, err
+	}
+
+	groups := make([]domain.ScanlationGroup, 0, len(a.Scanlators))
+	for _, scanlator := range a.Scanlators {
+		if query != "" && !strings.Contains(strings.ToLower(scanlator.Name), strings.ToLower(query)) {
+			continue
+		}
+		groups = append(groups, scanlator)
+	}
+
+	return groups, nil
+}
+
+// loadScanlators fetches the manga page's scanlation groups once and caches
+// them (scoped ScanID -> stable name) for group listing and the resolver
+// bridge. It is shared by Groups and Discover; repeated calls reuse the
+// cache.
+func (a *atsumaru) loadScanlators(ctx context.Context) error {
+	if a.Scanlators != nil {
+		return nil
+	}
+
 	mangaID, err := a.extractMangaID()
 	if err != nil {
-		return nil, fmt.Errorf("listing Atsumaru groups: %w", err)
+		return fmt.Errorf("loading Atsumaru scanlators: %w", err)
 	}
 
 	apiURL, err := a.apiURL("api/manga/page", url.Values{"id": []string{mangaID}})
 	if err != nil {
-		return nil, fmt.Errorf("listing Atsumaru groups: %w", err)
+		return fmt.Errorf("loading Atsumaru scanlators: %w", err)
 	}
 
 	var pageResp atsumaruMangaPageResponse
 	if err := a.getJSON(ctx, apiURL, &pageResp); err != nil {
-		return nil, fmt.Errorf("listing Atsumaru groups from %s: %w", apiURL, err)
+		return fmt.Errorf("loading Atsumaru scanlators from %s: %w", apiURL, err)
 	}
 
-	groups := make([]domain.ScanlationGroup, 0, len(pageResp.MangaPage.Scanlators))
+	scanlators := make([]domain.ScanlationGroup, 0, len(pageResp.MangaPage.Scanlators))
 	for _, scanlator := range pageResp.MangaPage.Scanlators {
 		if scanlator.ID == "" || scanlator.Name == "" {
 			continue
 		}
-		if query != "" && !strings.Contains(strings.ToLower(scanlator.Name), strings.ToLower(query)) {
-			continue
+		scanlators = append(scanlators, domain.ScanlationGroup{ID: scanlator.ID, Name: scanlator.Name})
+	}
+	a.Scanlators = scanlators
+
+	return nil
+}
+
+// scanlatorName returns the stable scanlation-group name for a manga-scoped
+// ScanID from the cached manga page, or "" when the id is not one of the
+// manga's scanlators.
+func (a *atsumaru) scanlatorName(scopedID string) string {
+	for _, scanlator := range a.Scanlators {
+		if scanlator.ID == scopedID {
+			return scanlator.Name
 		}
-		groups = append(groups, domain.ScanlationGroup{ID: scanlator.ID, Name: scanlator.Name})
+	}
+	return ""
+}
+
+// ResolveNativeGroup bridges a chapter's manga-scoped ScanID to a canonical
+// group UUID: the ScanID is looked up in the cached manga-page scanlators to
+// get the group's stable NAME, which is then resolved through the registry's
+// AliasIndex (groups.yaml aliases). Returns "" when the ScanID or its name
+// is not registered, so the caller falls back to its unlisted-group policy.
+// This is the atsumaru implementation of the per-source resolver extension
+// (domain.NativeResolver); atsumaru native ids are per-manga, so they are
+// NEVER registry "atsumaru:<id>" keys.
+func (a *atsumaru) ResolveNativeGroup(groups *domain.GroupRegistry, nativeGroup string) string {
+	scopedID := strings.TrimSpace(nativeGroup)
+	if scopedID == "" {
+		return ""
+	}
+	name := a.scanlatorName(scopedID)
+	if name == "" {
+		return ""
 	}
 
-	return groups, nil
+	return groupregistry.ResolveGroupID(groups, name)
 }
 
 func (a *atsumaru) extractMangaID() (string, error) {

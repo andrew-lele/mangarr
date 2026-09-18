@@ -15,6 +15,17 @@ listings), consumed by the `groups` CLI command; everything else reports
 "does not expose scanlation groups". `source.NewGroupLister` is the
 capability's registry (comix + atsumaru today).
 
+Quality-profile resolution also has a per-source extension seam: sources
+whose native group ids are GLOBAL (comix numeric GroupID, mangadex UUID)
+resolve through the registry's `NativeIndex` (`source:nativeId` key), the
+default in `internal/resolve`. Sources whose ids are scoped per-manga
+(atsumaru ScanIDs vary per manga for the same group name) register a
+`domain.NativeResolver` in `internal/source/source.go`
+(`NewNativeGroupResolver`, keyed by source name); the atsumaru resolver
+bridges the chapter ScanID through the adapter's cached manga-page
+scanlators to the stable scanlator NAME, then resolves that name through the
+registry's `AliasIndex`.
+
 ## Matrix
 
 | Identifier | Input (`-m`) | Extra args | Validation highlights | Notes |
@@ -27,7 +38,7 @@ capability's registry (comix + atsumaru today).
 | `cubari` | gist URL | `-g` required | valid URL + non-empty group | images listed in the payload, or fetched from the `/proxy/...` path the gist points at |
 | `weebcentral` | full series URL | none | `https://weebcentral.com` prefix | scraper + chapter image fragment fetch |
 | `comix` | full manga URL | `-g` optional | `https://comix.to/title/...` prefix; numeric group when set | private API codec + referer-protected images + tile reconstruction; optional `impersonationProxy` relays Cloudflare challenge solving to a FlareSolverr-compatible sidecar (see [USAGE](./../USAGE.md#source-inputs)); group discovery reads `GET /api/v1/groups?keyword=` |
-| `atsumaru` | full manga URL | `-g` required | `https://atsu.moe/manga/...` prefix + non-empty scan ID | API-based; group discovery lists the manga's scanlators from `/api/manga/page` |
+| `atsumaru` | full manga URL | `-g` required | `https://atsu.moe/manga/...` prefix + non-empty scan ID | API-based; group discovery lists the manga's scanlators from `/api/manga/page`; resolvable by scanlator NAME via the resolver extension |
 
 ## Rules
 
@@ -48,7 +59,7 @@ capability's registry (comix + atsumaru today).
 - `weebcentral` fetches chapter images from the `/chapters/<id>/images` HTML fragment
 - `comix` implements frontend build `35595e3de3c99889c1aa70`; it generates request tokens, decodes encrypted API envelopes, sends image request headers, and reconstructs scrambled tile images
 - Comix scramble hashes are opaque routing keys. The two known legacy hashes select explicit seed prefixes; unknown hashes use prefix zero, matching the frontend fallback.
-- `atsumaru` fetches chapter metadata from `/api/manga/info`, filters chapters by scan ID, and resolves relative page paths from `/api/read/chapter`; resolved page URLs on the `atsu.moe` host are rewritten to the CDN host `cdn.atsu.moe` (same path), mirroring the keiyoushi extension — the origin host serves 410 for `/static/pages/...`
+- `atsumaru` fetches chapter metadata from `/api/manga/info`, filters chapters by scan ID, and resolves relative page paths from `/api/read/chapter`; resolved page URLs on the `atsu.moe` host are rewritten to the CDN host `cdn.atsu.moe` (same path), mirroring the keiyoushi extension — the origin host serves 410 for `/static/pages/...`; `Discover` also loads `/api/manga/page` scanlators (non-fatal) so per-manga ScanIDs can bridge to canonical groups by name at resolve time
 - source-specific image transforms use `domain.ImageProcessor`; the acquisition path owns transport and output while the source adapter owns the transform
 - shared request retries use `internal/sharedhttp/`; see the [retry policy and scraper limitations](./runtime-model.md#http-retry-lifecycle)
 - Manga Plus request errors omit query strings so registration and device secrets do not enter logs

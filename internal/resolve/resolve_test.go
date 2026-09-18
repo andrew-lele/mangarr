@@ -262,3 +262,51 @@ func TestResolveUsesSourceSpecificNativeKey(t *testing.T) {
 	decision = Resolve(&groups, &profiles, "nope", comixCPNative, profileID)
 	require.Equal(t, domain.OutcomeUnknown, decision.Outcome)
 }
+
+func TestResolveWithResolverUsesPerSourceExtension(t *testing.T) {
+	t.Parallel()
+
+	groupsYAML := `version: 1
+
+groups:
+  a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
+    aliases: [ "Asura" ]
+`
+	profilesYAML := `version: 1
+
+profiles:
+  f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f:
+    name: "Atsumaru Preferred"
+    preferredGroups: [ "Asura" ]
+    ignoredGroups: [ ]
+    fallback: "any"
+`
+	groups, profiles := writeRegistry(t, groupsYAML, profilesYAML)
+
+	// A stub mimicking the atsumaru bridge: the chapter's scoped ScanID maps
+	// to the scanlator NAME first, and only the name is a registry key
+	// (atsumaru ids are scoped per-manga, never "atsumaru:<id>" entries).
+	resolver := func(groups *domain.GroupRegistry, nativeGroup string) string {
+		if nativeGroup == "scoped-asura" {
+			return registry.ResolveGroupID(groups, "Asura")
+		}
+		return ""
+	}
+
+	decision := ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-asura", profileID, resolver)
+	require.Equal(t, domain.OutcomePreferred, decision.Outcome)
+	require.Equal(t, 0, decision.PreferredIndex)
+	require.Equal(t, cpGroupID, decision.CanonicalID)
+
+	// A scoped id the resolver cannot bridge falls back to the profile's
+	// unlisted-group policy (fallback any -> unknown).
+	decision = ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-unknown", profileID, resolver)
+	require.Equal(t, domain.OutcomeUnknown, decision.Outcome)
+	require.Equal(t, "", decision.CanonicalID)
+
+	// The same chapter id through the DEFAULT (nil) resolver resolves
+	// nothing, because per-manga ids are never global NativeIndex keys.
+	decision = ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-asura", profileID, nil)
+	require.Equal(t, domain.OutcomeUnknown, decision.Outcome)
+	require.Equal(t, "", decision.CanonicalID)
+}

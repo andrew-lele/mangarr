@@ -10,7 +10,7 @@ import (
 )
 
 // Resolve returns the quality-profile decision for a chapter's scanlation
-// group.
+// group using the default native-id resolver (NativeIndex lookup).
 //
 // source is the lowercase source key used in groups.yaml (e.g. "comix"), and
 // nativeGroup is the group id the source attached to the chapter (comix
@@ -27,6 +27,16 @@ import (
 // FallbackNever rejects them as OutcomeIgnored, FallbackAny leaves them
 // OutcomeUnknown.
 func Resolve(groups *domain.GroupRegistry, profiles *domain.ProfileRegistry, source, nativeGroup, profileRef string) domain.Decision {
+	return ResolveWithResolver(groups, profiles, source, nativeGroup, profileRef, nil)
+}
+
+// ResolveWithResolver extends Resolve with an optional per-source native-id
+// resolver (domain.NativeResolver). A nil resolver keeps the default
+// "source:nativeGroup" NativeIndex lookup; a non-nil resolver replaces the
+// native-id -> canonical step for sources whose native ids are scoped
+// per-manga (atsumaru: the source adapter bridges the chapter's ScanID to the
+// stable scanlator name, then maps the name through the registry's AliasIndex).
+func ResolveWithResolver(groups *domain.GroupRegistry, profiles *domain.ProfileRegistry, source, nativeGroup, profileRef string, resolver domain.NativeResolver) domain.Decision {
 	decision := domain.Decision{Outcome: domain.OutcomeUnknown, PreferredIndex: -1}
 
 	profile := findProfile(profiles, profileRef)
@@ -40,7 +50,12 @@ func Resolve(groups *domain.GroupRegistry, profiles *domain.ProfileRegistry, sou
 		return decision
 	}
 
-	canonicalID := registry.ResolveGroupID(groups, source+":"+nativeGroup)
+	canonicalID := ""
+	if resolver != nil {
+		canonicalID = resolver(groups, nativeGroup)
+	} else {
+		canonicalID = registry.ResolveGroupID(groups, source+":"+nativeGroup)
+	}
 	decision.CanonicalID = canonicalID
 	decision.GroupName = groupName(groups, canonicalID)
 

@@ -13,6 +13,7 @@ import (
 	"mangarr/internal/files"
 	"mangarr/internal/parse"
 	"mangarr/internal/registry"
+	"mangarr/internal/source"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
@@ -150,18 +151,19 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 					}
 
 					acquisition, err := acquire.Chapter(ctx, log, acquire.Request{
-						Source:            s,
-						SourceKey:         options.mangaSource,
-						Manga:             selectedManga,
-						Chapter:           selectedChapter,
-						DownloadDirectory: options.downloadDirectory,
-						NamingTemplate:    options.naming,
-						TitleOverride:     options.overwrite,
-						Force:             options.force,
-						DryRun:            options.dryRun,
-						Groups:            &requestGroups,
-						Profiles:          &requestProfiles,
-						ProfileRef:        options.qualityProfile,
+						Source:             s,
+						SourceKey:          options.mangaSource,
+						Manga:              selectedManga,
+						Chapter:            selectedChapter,
+						DownloadDirectory:  options.downloadDirectory,
+						NamingTemplate:     options.naming,
+						TitleOverride:      options.overwrite,
+						Force:              options.force,
+						DryRun:             options.dryRun,
+						Groups:             &requestGroups,
+						Profiles:           &requestProfiles,
+						ProfileRef:         options.qualityProfile,
+						ResolveNativeGroup: source.NewNativeGroupResolver(options.mangaSource, s),
 					})
 					if err != nil {
 						log.Error().Err(err).Msgf("Failed to acquire chapter %s", selectedChapter.Number)

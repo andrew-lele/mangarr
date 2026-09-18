@@ -35,6 +35,14 @@ type GroupRegistry struct {
 	NativeIndex map[string]string
 }
 
+// NativeResolver is the optional per-source group-id resolver extension: it
+// maps a chapter's native group id to a canonical group UUID, or "" when
+// unresolvable. The default (nil) maps "source:nativeGroup" through the
+// registry's NativeIndex; sources whose native ids are scoped per-manga
+// (atsumaru ScanIDs vary per manga for the same group name) supply a
+// resolver that bridges through source-owned data instead.
+type NativeResolver func(groups *GroupRegistry, nativeGroup string) string
+
 // Profile is a named quality profile referencing canonical group UUIDs.
 type Profile struct {
 	ID              string   `yaml:"id"`
