@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	weebcentralURL = "https://weebcentral.com"
+	weebcentralURL              = "https://weebcentral.com"
+	weebcentralBrowserUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
 var weebcentralChapterNumberPattern = regexp.MustCompile(`(?:Chapter|Ch.) ?(\d+(\.\d+)?)`)
@@ -245,7 +246,7 @@ func (w *weebcentral) fetch(ctx context.Context, rawURL string) ([]byte, error) 
 			return fmt.Errorf("creating request for %s: %w", rawURL, err)
 		}
 
-		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; mangarr/1.0; +https://github.com/nuxencs/mangarr)")
+		req.Header.Set("User-Agent", weebcentralBrowserUserAgent)
 		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
 		resp, err := sharedhttp.ExecRequest(w.Client, req)
