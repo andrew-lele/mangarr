@@ -267,6 +267,34 @@ mangarr version
 
 Comix depends on the provider's current frontend. A Comix frontend update can require a Mangarr update. Use `-g` when a title has duplicate chapter numbers from different groups.
 
+Comix sits behind a Cloudflare challenge. When direct requests return 403 (the
+`cf-mitigated: challenge` case), set the entry's `impersonationProxy` to a
+local [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)-compatible
+relay running on the same host as Mangarr (the challenge cookies are bound to
+the IP that solved them):
+
+```yaml
+monitoredManga:
+  One Piece:
+    source: "comix"
+    manga: "https://comix.to/title/106213-one-piece"
+    group: "9641"
+    impersonationProxy: "http://127.0.0.1:8191"
+```
+
+With `impersonationProxy` set, Mangarr asks the relay to solve Comix's
+challenge once (the relay runs the site's JavaScript in a real browser),
+keeps the minted clearance cookies, and then issues the API request directly
+from the same egress IP with a browser-shaped User-Agent. The relay is
+contacted again when the cookies age out (default 10 minutes) or the origin
+answers with a fresh challenge. `impersonationProxy` only affects the Comix
+source and must be a bare `http(s)://host[:port]` origin.
+
+The relay is not bundled with Mangarr and no Chromium is required by the
+Mangarr image itself. Deploy FlareSolverr (or a compatible fork) separately,
+e.g. as a systemd service on the same host, and keep it on the same network
+path as Mangarr.
+
 ## Naming Templates
 
 Available variables:

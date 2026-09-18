@@ -11,7 +11,7 @@ type constructor func(domain.MonitoredManga) domain.Source
 var registry = map[string]constructor{
 	"asurascans": func(m domain.MonitoredManga) domain.Source { return NewAsurascans(m.Manga) },
 	"atsumaru":   func(m domain.MonitoredManga) domain.Source { return NewAtsumaru(m.Manga, m.Group) },
-	"comix":      func(m domain.MonitoredManga) domain.Source { return NewComix(m.Manga, m.Group) },
+	"comix":      func(m domain.MonitoredManga) domain.Source { return NewComix(m.Manga, m.Group, m.ImpersonationProxy) },
 	"cubari":     func(m domain.MonitoredManga) domain.Source { return NewCubari(m.Manga, m.Group) },
 	"flamecomics": func(m domain.MonitoredManga) domain.Source {
 		return NewFlamecomics(m.Manga)

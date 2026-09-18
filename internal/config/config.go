@@ -109,6 +109,14 @@ monitoredManga:
     #
     #qualityProfile: "f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f"
 
+    # impersonationProxy points Comix API requests at a local
+    # FlareSolverr-compatible relay (default: none). The relay solves
+    # Comix's Cloudflare challenge with a real browser; Mangarr keeps the
+    # minted clearance cookie and issues the request directly from the same
+    # egress IP. Only meaningful for the comix source.
+    #
+    #impersonationProxy: "http://127.0.0.1:8191"
+
   # Custom name you can give the entry to easily distinguish between them
   #
   Kagurabachi:

@@ -20,17 +20,20 @@ import (
 )
 
 const (
-	comixURL         = "https://comix.to"
-	comixResultLimit = 100
+	comixURL                    = "https://comix.to"
+	comixResultLimit            = 100
+	comixImpersonatingUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
 type comix struct {
-	MangaURL string
-	GroupID  string
-	BaseURL  string
-	Client   *http.Client
-	Codec    comixCodec
-	CodecErr error
+	MangaURL         string
+	GroupID          string
+	BaseURL          string
+	Client           *http.Client
+	Codec            comixCodec
+	CodecErr         error
+	ImpersonationErr error
+	Impersonating    bool
 }
 
 type comixManga struct {
@@ -92,23 +95,68 @@ func (p *comixPages) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func NewComix(mangaURL, groupID string) domain.Source {
+func NewComix(mangaURL, groupID, impersonationProxy string) domain.Source {
 	jar, _ := cookiejar.New(nil)
 	codec, codecErr := newComixCodec()
+
+	var transport http.RoundTripper = sharedhttp.Transport
+	var impersonationErr error
+	impersonating := false
+	if impersonationProxy != "" {
+		proxyURL, err := url.Parse(impersonationProxy)
+		if err != nil {
+			impersonationErr = fmt.Errorf("invalid Comix impersonation proxy: %w", err)
+		} else if err := validateImpersonationProxy(proxyURL); err != nil {
+			impersonationErr = err
+		} else {
+			base, err := url.Parse(comixURL)
+			if err != nil {
+				impersonationErr = fmt.Errorf("parsing Comix base URL: %w", err)
+			} else {
+				transport = sharedhttp.NewImpersonatingTransport(transport, proxyURL, []string{base.Hostname()})
+				impersonating = true
+			}
+		}
+	}
 	client := http.Client{
 		Timeout:   60 * time.Second,
-		Transport: sharedhttp.Transport,
+		Transport: transport,
 		Jar:       jar,
 	}
 
 	return &comix{
-		MangaURL: mangaURL,
-		GroupID:  groupID,
-		BaseURL:  comixURL,
-		Client:   &client,
-		Codec:    codec,
-		CodecErr: codecErr,
+		MangaURL:         mangaURL,
+		GroupID:          groupID,
+		BaseURL:          comixURL,
+		Client:           &client,
+		Codec:            codec,
+		CodecErr:         codecErr,
+		ImpersonationErr: impersonationErr,
+		Impersonating:    impersonating,
 	}
+}
+
+// validateImpersonationProxy rejects relay targets that would never work or
+// could loop: a bare http(s) origin, never the site being protected.
+func validateImpersonationProxy(proxyURL *url.URL) error {
+	if proxyURL.Scheme != "http" && proxyURL.Scheme != "https" {
+		return fmt.Errorf("Comix impersonation proxy must use http or https")
+	}
+	if proxyURL.Hostname() == "" {
+		return fmt.Errorf("Comix impersonation proxy must include a host")
+	}
+	base, err := url.Parse(comixURL)
+	if err != nil {
+		return fmt.Errorf("parsing Comix base URL: %w", err)
+	}
+	if proxyURL.Hostname() == base.Hostname() {
+		return fmt.Errorf("Comix impersonation proxy must not point at the target host")
+	}
+	if proxyURL.Path != "" && proxyURL.Path != "/" {
+		return fmt.Errorf("Comix impersonation proxy must be a bare origin without a path")
+	}
+
+	return nil
 }
 
 func (c *comix) String() string {
@@ -116,6 +164,9 @@ func (c *comix) String() string {
 }
 
 func (c *comix) ValidateInput() error {
+	if c.ImpersonationErr != nil {
+		return c.ImpersonationErr
+	}
 	if _, err := c.extractIDFromURL(c.MangaURL); err != nil {
 		return err
 	}
@@ -282,7 +333,14 @@ func (c *comix) get(ctx context.Context, path string, params comixParams, destin
 		return fmt.Errorf("creating Comix request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "mangarr")
+	// The impersonation relay's browser mints the clearance cookie against a
+	// Chrome-shaped fingerprint; keep sending the matching profile so the
+	// cookie stays valid for requests issued directly from Mangarr.
+	userAgent := "mangarr"
+	if c.Impersonating {
+		userAgent = comixImpersonatingUserAgent
+	}
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 
 	return retry.Do(func() error {

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"mangarr/internal/domain"
+	"mangarr/internal/sharedhttp"
 
 	"github.com/stretchr/testify/require"
 )
@@ -18,14 +19,51 @@ import (
 func TestComixValidateInput(t *testing.T) {
 	t.Parallel()
 
-	src := NewComix("https://comix.to/title/pvry-one-piece", "")
+	src := NewComix("https://comix.to/title/pvry-one-piece", "", "")
 	require.NoError(t, src.ValidateInput())
 
-	src = NewComix("https://example.com/title/pvry-one-piece", "")
+	src = NewComix("https://example.com/title/pvry-one-piece", "", "")
 	require.EqualError(t, src.ValidateInput(), "URL must use https://comix.to")
 
-	src = NewComix("https://comix.to/title/pvry-one-piece", "not-numeric")
+	src = NewComix("https://comix.to/title/pvry-one-piece", "not-numeric", "")
 	require.ErrorContains(t, src.ValidateInput(), "Comix group ID must be numeric")
+}
+
+func TestComixValidateImpersonationProxy(t *testing.T) {
+	t.Parallel()
+
+	src := NewComix("https://comix.to/title/pvry-one-piece", "", "http://127.0.0.1:8191")
+	require.NoError(t, src.ValidateInput())
+
+	src = NewComix("https://comix.to/title/pvry-one-piece", "", "http://exa mple.com")
+	require.ErrorContains(t, src.ValidateInput(), "invalid Comix impersonation proxy")
+
+	src = NewComix("https://comix.to/title/pvry-one-piece", "", "http://")
+	require.EqualError(t, src.ValidateInput(), "Comix impersonation proxy must include a host")
+
+	src = NewComix("https://comix.to/title/pvry-one-piece", "", "locally:invalid")
+	require.EqualError(t, src.ValidateInput(), "Comix impersonation proxy must use http or https")
+
+	src = NewComix("https://comix.to/title/pvry-one-piece", "", "https://comix.to")
+	require.EqualError(t, src.ValidateInput(), "Comix impersonation proxy must not point at the target host")
+
+	src = NewComix("https://comix.to/title/pvry-one-piece", "", "http://127.0.0.1:8191/v1")
+	require.EqualError(t, src.ValidateInput(), "Comix impersonation proxy must be a bare origin without a path")
+
+	src = NewComix("https://comix.to/title/pvry-one-piece", "", "ftp://127.0.0.1")
+	require.EqualError(t, src.ValidateInput(), "Comix impersonation proxy must use http or https")
+}
+
+func TestComixImpersonationSelectsBorrowedTransport(t *testing.T) {
+	t.Parallel()
+
+	source := NewComix("https://comix.to/title/pvry-one-piece", "", "http://127.0.0.1:8191").(*comix)
+	require.True(t, source.Impersonating)
+	require.True(t, source.Client.Transport != sharedhttp.Transport)
+
+	source = NewComix("https://comix.to/title/pvry-one-piece", "", "").(*comix)
+	require.False(t, source.Impersonating)
+	require.True(t, source.Client.Transport == sharedhttp.Transport)
 }
 
 func TestComixCodecTokenMatchesFrontendBuild(t *testing.T) {
@@ -273,7 +311,7 @@ func TestComixPagesMarksScrambledPage(t *testing.T) {
 func TestComixExtractIDRequiresCanonicalTitleURL(t *testing.T) {
 	t.Parallel()
 
-	source := NewComix("https://comix.to/title/pvry-one-piece", "").(*comix)
+	source := NewComix("https://comix.to/title/pvry-one-piece", "", "").(*comix)
 	mangaID, err := source.extractIDFromURL(source.MangaURL)
 	require.NoError(t, err)
 	require.Equal(t, "pvry", mangaID)
@@ -285,7 +323,7 @@ func TestComixExtractIDRequiresCanonicalTitleURL(t *testing.T) {
 func newTestComix(t *testing.T, server *httptest.Server, mangaURL, groupID string) *comix {
 	t.Helper()
 
-	source := NewComix(mangaURL, groupID).(*comix)
+	source := NewComix(mangaURL, groupID, "").(*comix)
 	source.BaseURL = server.URL
 	source.Client = server.Client()
 

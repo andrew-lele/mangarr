@@ -19,10 +19,11 @@ type Config struct {
 }
 
 type MonitoredManga struct {
-	Source         string `yaml:"source"`
-	Manga          string `yaml:"manga"`
-	Group          string `yaml:"group"`
-	Language       string `yaml:"language"`
-	Overwrite      string `yaml:"overwrite"`
-	QualityProfile string `yaml:"qualityProfile"`
+	Source             string `yaml:"source"`
+	Manga              string `yaml:"manga"`
+	Group              string `yaml:"group"`
+	Language           string `yaml:"language"`
+	Overwrite          string `yaml:"overwrite"`
+	QualityProfile     string `yaml:"qualityProfile"`
+	ImpersonationProxy string `yaml:"impersonationProxy"`
 }

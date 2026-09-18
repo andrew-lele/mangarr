@@ -109,6 +109,16 @@ monitoredManga:
     #
     group: "/r/OnePunchMan"
 
+  # Example Comix entry. Comix is behind a Cloudflare challenge; point
+  # impersonationProxy at a local FlareSolverr-compatible relay to solve it
+  # (see docs/USAGE.md).
+  #
+  #  One Piece:
+  #    source: "comix"
+  #    manga: "https://comix.to/title/106213-one-piece"
+  #    group: "9641"
+  #    impersonationProxy: "http://127.0.0.1:8191"
+
 # mangarr logs file
 # If not defined, logs to stdout
 # Make sure to use forward slashes and include the filename with extension. e.g. "logs/mangarr.log", "C:/mangarr/logs/mangarr.log"

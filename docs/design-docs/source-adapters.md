@@ -20,7 +20,7 @@ All adapters implement the small `domain.Source` contract:
 | `asurascans` | full series URL | none | `https://asurascans.com/comics/...` | server-rendered HTML; filters locked early-access chapters from discovery |
 | `cubari` | gist URL | `-g` required | valid URL + non-empty group | images listed in the payload, or fetched from the `/proxy/...` path the gist points at |
 | `weebcentral` | full series URL | none | `https://weebcentral.com` prefix | scraper + chapter image fragment fetch |
-| `comix` | full manga URL | `-g` optional | `https://comix.to/title/...` prefix; numeric group when set | private API codec + referer-protected images + tile reconstruction |
+| `comix` | full manga URL | `-g` optional | `https://comix.to/title/...` prefix; numeric group when set | private API codec + referer-protected images + tile reconstruction; optional `impersonationProxy` relays Cloudflare challenge solving to a FlareSolverr-compatible sidecar (see [USAGE](./../USAGE.md#source-inputs)) |
 | `atsumaru` | full manga URL | `-g` required | `https://atsu.moe/manga/...` prefix + non-empty scan ID | API-based |
 
 ## Rules
