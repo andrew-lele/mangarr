@@ -154,6 +154,14 @@ monitoredManga:
     #
     group: "/r/OnePunchMan"
 
+  # Title-based form: track the series by title only. Mangarr searches every
+  # SOURCE the qualityProfile's preferred groups map in groups.yaml (strict:
+  # sources outside the profile are never scanned), finds the title, and
+  # downloads the best group per profile preference. Omit source/manga/group.
+  #
+  #  Spy x Family:
+  #    qualityProfile: "General Preferred"
+
 # mangarr logs file
 # If not defined, logs to stdout
 # Make sure to use forward slashes and include the filename with extension. e.g. "logs/mangarr.log", "C:/mangarr/logs/mangarr.log"

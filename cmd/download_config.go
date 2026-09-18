@@ -50,10 +50,16 @@ func resolveDownloadOptions(cmd *cobra.Command, configPath string, options *down
 		options.language = entry.Language
 	}
 	if strings.TrimSpace(options.mangaSource) == "" {
-		return fmt.Errorf("configured series %q: source is required (set source or --source)", options.series)
+		// Title-based entries (qualityProfile only) legitimately have no
+		// source; everything else still requires one.
+		if strings.TrimSpace(options.qualityProfile) == "" {
+			return fmt.Errorf("configured series %q: source is required (set source or --source)", options.series)
+		}
 	}
 	if strings.TrimSpace(options.manga) == "" {
-		return fmt.Errorf("configured series %q: manga is required (set manga or --manga)", options.series)
+		if strings.TrimSpace(options.qualityProfile) == "" {
+			return fmt.Errorf("configured series %q: manga is required (set manga or --manga)", options.series)
+		}
 	}
 	return nil
 }

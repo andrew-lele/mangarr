@@ -2,6 +2,7 @@ package source
 
 import (
 	"fmt"
+	"slices"
 
 	"mangarr/internal/domain"
 )
@@ -31,6 +32,17 @@ func Select(monitoredManga domain.MonitoredManga) (domain.Source, error) {
 	}
 
 	return newSource(monitoredManga), nil
+}
+
+// Keys returns the supported source keys in deterministic order, for
+// validating and intersecting profile scan-source sets.
+func Keys() []string {
+	keys := make([]string, 0, len(registry))
+	for key := range registry {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // nativeResolvers maps source names to factories that close a per-source

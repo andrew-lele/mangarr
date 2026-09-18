@@ -64,6 +64,25 @@ type GroupLister interface {
 	Groups(ctx context.Context, query string) ([]ScanlationGroup, error)
 }
 
+// SearchResult is one candidate series from a source's title search. URL is
+// the series identifier in the form the source's Discover accepts (atsumaru /
+// weebcentral full series URL, mangadex UUID); Title is the source-side
+// display name used for exact-title matching against the tracked entry.
+type SearchResult struct {
+	Title string
+	URL   string
+}
+
+// Searcher is an OPTIONAL capability layered on top of domain.Source: sources
+// that can look up a series by title implement it so title+qualityProfile
+// tracked entries can find the series URL without a source-pinned config
+// entry. Sources without search support report an error from
+// source.NewSearcher and the caller skips that source.
+type Searcher interface {
+	Search(ctx context.Context, title string) ([]SearchResult, error)
+}
+
+// ImageInfo is one page transport description for a chapter.
 type ImageInfo struct {
 	ImageURL       string
 	EncryptionKey  string

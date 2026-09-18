@@ -353,3 +353,82 @@ profiles:
 	require.Equal(t, domain.OutcomeUnknown, decision.Outcome)
 	require.Equal(t, "", decision.CanonicalID)
 }
+
+func candidate(sourceKey, outcome string, preferredIndex int) ChapterCandidate {
+	return ChapterCandidate{
+		SourceKey: sourceKey,
+		Chapter:   domain.Chapter{ID: sourceKey},
+		Decision:  domain.Decision{Outcome: outcome, PreferredIndex: preferredIndex, CanonicalID: "c-" + sourceKey},
+	}
+}
+
+func TestBestCandidatePrefersEarliestPreferredOverUnknown(t *testing.T) {
+	t.Parallel()
+
+	profile := &domain.Profile{PreferredGroups: []string{"Asura", "Webtoon"}, Fallback: domain.FallbackAny}
+
+	// Unknown from one source, preferred from two others: the earliest
+	// preferred entry (Asura at index 0) wins regardless of source order.
+	winner, ok := BestCandidate(profile, []ChapterCandidate{
+		candidate("atsumaru", domain.OutcomeUnknown, -1),
+		candidate("weebcentral", domain.OutcomePreferred, 1),
+		candidate("mangadex", domain.OutcomePreferred, 0),
+	})
+	require.True(t, ok)
+	require.Equal(t, "mangadex", winner.SourceKey)
+
+	// Asura (index 0) beats Webtoon (index 1).
+	winner, ok = BestCandidate(profile, []ChapterCandidate{
+		candidate("weebcentral", domain.OutcomePreferred, 1),
+		candidate("atsumaru", domain.OutcomePreferred, 0),
+	})
+	require.True(t, ok)
+	require.Equal(t, "atsumaru", winner.SourceKey)
+}
+
+func TestBestCandidateFallbackAnyAcceptsUnknownLowestPreference(t *testing.T) {
+	t.Parallel()
+
+	profile := &domain.Profile{Fallback: domain.FallbackAny}
+
+	winner, ok := BestCandidate(profile, []ChapterCandidate{
+		candidate("atsumaru", domain.OutcomeUnknown, -1),
+		candidate("weebcentral", domain.OutcomeUnknown, -1),
+	})
+	require.True(t, ok)
+	// Deterministic: the first unknown candidate in source order wins.
+	require.Equal(t, "atsumaru", winner.SourceKey)
+}
+
+func TestBestCandidateFallbackNeverRejectsOnlyUnknown(t *testing.T) {
+	t.Parallel()
+
+	profile := &domain.Profile{Fallback: domain.FallbackNever}
+
+	_, ok := BestCandidate(profile, []ChapterCandidate{
+		candidate("atsumaru", domain.OutcomeUnknown, -1),
+		candidate("mangadex", domain.OutcomeUnknown, -1),
+	})
+	require.False(t, ok)
+}
+
+func TestBestCandidateIgnoredIsHardRejection(t *testing.T) {
+	t.Parallel()
+
+	profile := &domain.Profile{Fallback: domain.FallbackAny}
+
+	// A preferred candidate + ignored candidates -> preferred wins; ignored
+	// alone -> nothing may be downloaded.
+	winner, ok := BestCandidate(profile, []ChapterCandidate{
+		candidate("atsumaru", domain.OutcomeIgnored, -1),
+		candidate("mangadex", domain.OutcomePreferred, 2),
+	})
+	require.True(t, ok)
+	require.Equal(t, "mangadex", winner.SourceKey)
+
+	_, ok = BestCandidate(profile, []ChapterCandidate{
+		candidate("atsumaru", domain.OutcomeIgnored, -1),
+		candidate("cubari", domain.OutcomeIgnored, -1),
+	})
+	require.False(t, ok)
+}

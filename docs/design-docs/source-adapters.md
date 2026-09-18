@@ -15,6 +15,13 @@ listings), consumed by the `groups` CLI command; everything else reports
 "does not expose scanlation groups". `source.NewGroupLister` is the
 capability's registry (comix + atsumaru today).
 
+Title-search is a second optional capability: `domain.Searcher`
+(`Search(ctx, title)` -> candidate series URLs/names) backs title-based
+monitoredManga entries. `source.NewSearcher` dispatches it (atsumaru via
+`/collections/manga/documents/search`, weebcentral via `/search/data`,
+mangadex via `GET /api.mangadex.org/manga?title=`); other sources answer
+"does not support title search" and the caller skips them.
+
 Quality-profile resolution also has a per-source extension seam: sources
 whose native group ids are GLOBAL (comix numeric GroupID, mangadex UUID)
 resolve through the registry's `NativeIndex` (`source:nativeId` key), the

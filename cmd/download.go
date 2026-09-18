@@ -53,30 +53,53 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 				return fmt.Errorf("invalid download location: %w", err)
 			}
 
-			s, err := selectSource(domain.MonitoredManga{
-				Source:         options.mangaSource,
-				Manga:          options.manga,
-				Group:          options.group,
-				Language:       options.language,
-				QualityProfile: options.qualityProfile,
-			})
-			if err != nil {
-				if cmd.Flags().Changed("series") {
-					return fmt.Errorf("configured series %q: selecting source: %w", options.series, err)
+			// Title+qualityProfile entries (no source/manga flags) are resolved
+			// through the same cross-source pipeline as monitor: search every
+			// source the profile maps, merge candidates, acquire the best
+			// passing group per chapter number.
+			var selectedManga domain.Manga
+			var winners map[domain.ChapterNumber]profileChapter
+			var flowSource domain.Source
+			var flowSourceKey string
+			if options.mangaSource == "" && options.manga == "" && options.qualityProfile != "" {
+				merged, perNumber, skips, err := trackTitle(ctx, &requestGroups, &requestProfiles, options.qualityProfile, options.series)
+				if err != nil {
+					return fmt.Errorf("configured series %q: %w", options.series, err)
 				}
-				return fmt.Errorf("selecting source: %w", err)
-			}
-
-			if err := s.ValidateInput(); err != nil {
-				if cmd.Flags().Changed("series") {
-					return fmt.Errorf("configured series %q: invalid input: %w", options.series, err)
+				logTrackSkips(func(format string, args ...any) {
+					log.Info().Msgf(format, args...)
+				}, skips)
+				if len(merged.Chapters) == 0 {
+					return fmt.Errorf("configured series %q: no chapters found across scanned sources", options.series)
 				}
-				return fmt.Errorf("invalid input: %w", err)
-			}
+				selectedManga, winners = merged, perNumber
+			} else {
+				s, err := selectSource(domain.MonitoredManga{
+					Source:         options.mangaSource,
+					Manga:          options.manga,
+					Group:          options.group,
+					Language:       options.language,
+					QualityProfile: options.qualityProfile,
+				})
+				if err != nil {
+					if cmd.Flags().Changed("series") {
+						return fmt.Errorf("configured series %q: selecting source: %w", options.series, err)
+					}
+					return fmt.Errorf("selecting source: %w", err)
+				}
 
-			selectedManga, err := s.Discover(ctx)
-			if err != nil {
-				return fmt.Errorf("getting manga from %s: %w", s, err)
+				if err := s.ValidateInput(); err != nil {
+					if cmd.Flags().Changed("series") {
+						return fmt.Errorf("configured series %q: invalid input: %w", options.series, err)
+					}
+					return fmt.Errorf("invalid input: %w", err)
+				}
+
+				selectedManga, err = s.Discover(ctx)
+				if err != nil {
+					return fmt.Errorf("getting manga from %s: %w", s, err)
+				}
+				flowSource, flowSourceKey = s, options.mangaSource
 			}
 
 			var selectedChapterNumbers []domain.ChapterNumber
@@ -151,9 +174,24 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 						return
 					}
 
+					// Title+profile flow: each chapter number's winner may come
+					// from a different scanned source; a number with no passing
+					// group (all candidates ignored, or only-unknown under
+					// fallback never) is skipped like any failed chapter.
+					chapterSource, chapterSourceKey := flowSource, flowSourceKey
+					if winners != nil {
+						winner, ok := winners[chapterNumber]
+						if !ok {
+							err := fmt.Errorf("chapter %s has no group passing the profile", chapterNumber)
+							log.Error().Err(err).Msgf("Failed to find chapter with number %s", chapterNumber)
+							return
+						}
+						chapterSource, chapterSourceKey = winner.from.Source, winner.from.SourceKey
+					}
+
 					acquisition, err := acquire.Chapter(ctx, log, acquire.Request{
-						Source:             s,
-						SourceKey:          options.mangaSource,
+						Source:             chapterSource,
+						SourceKey:          chapterSourceKey,
 						Manga:              selectedManga,
 						Chapter:            selectedChapter,
 						DownloadDirectory:  options.downloadDirectory,
@@ -164,7 +202,7 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 						Groups:             &requestGroups,
 						Profiles:           &requestProfiles,
 						ProfileRef:         options.qualityProfile,
-						ResolveNativeGroup: source.NewNativeGroupResolver(options.mangaSource, s),
+						ResolveNativeGroup: source.NewNativeGroupResolver(chapterSourceKey, chapterSource),
 					})
 					if err != nil {
 						log.Error().Err(err).Msgf("Failed to acquire chapter %s", selectedChapter.Number)

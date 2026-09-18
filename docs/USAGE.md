@@ -177,11 +177,52 @@ monitoredManga:
     source: "mangaplus"
     manga: "100274"
 
+  # Title-based form: no source/manga/group. Mangarr searches every source
+  # the quality profile's preferred groups map in groups.yaml (STRICT: only
+  # those sources are scanned), finds the title, and downloads the chapter
+  # whose group ranks highest in the profile.
+  Spy x Family:
+    qualityProfile: "General Preferred"
+
 logLevel: "DEBUG"
 #logPath: "/path/to/logs/mangarr.log"
 #logMaxSize: 50
 #logMaxBackups: 3
 ```
+
+### Title-based tracked entries
+
+An entry may omit `source`/`manga`/`group` entirely and be tracked by title
+(the map key) plus `qualityProfile`:
+
+```yaml
+monitoredManga:
+  Spy x Family:
+    qualityProfile: "General Preferred"
+```
+
+For a title-based entry, Mangarr:
+
+1. Derives the STRICT scan-source set from the profile: the union of source
+   keys listed across the profile's **preferred** groups' per-source native-id
+   maps in `groups.yaml`. Sources that only appear for ignored groups — or
+   not at all — are never searched, so `fallback: "any"` cannot pull in an
+   off-profile source.
+2. Searches each scanned source by exact title (first search hit when no
+   exact match), discovers the series, and merges chapters across sources.
+3. Per chapter number, picks the highest-profile-preferred non-ignored
+   candidate; ties resolve to the earliest `preferredGroups` entry. When no
+   preferred candidate exists, an unknown group downloads only under
+   `fallback: "any"` (lowest preference) and is skipped under
+   `fallback: "never"`; ignored groups are always skipped. The dry-run /
+   monitor log reports the winning `[source=... group=... decision=...]`.
+
+Sources without title search (asurascans, mangaplus, flamecomics, comix,
+cubari, tcbscans) are skipped with a logged notice, never a crash; profile
+entry validation fails fast during `monitor` if a profile maps no source
+mangarr can scan. Source-pinned entries (`source` + `manga`) are unchanged
+and keep their exact previous behavior, including live registry reloads on
+each check interval.
 
 Config lookup order:
 

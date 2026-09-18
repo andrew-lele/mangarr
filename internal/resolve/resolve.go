@@ -39,7 +39,7 @@ func Resolve(groups *domain.GroupRegistry, profiles *domain.ProfileRegistry, sou
 func ResolveWithResolver(groups *domain.GroupRegistry, profiles *domain.ProfileRegistry, source, nativeGroup, profileRef string, resolver domain.NativeResolver) domain.Decision {
 	decision := domain.Decision{Outcome: domain.OutcomeUnknown, PreferredIndex: -1}
 
-	profile := findProfile(profiles, profileRef)
+	profile := FindProfile(profiles, profileRef)
 	if profile == nil {
 		return decision
 	}
@@ -81,9 +81,10 @@ func ResolveWithResolver(groups *domain.GroupRegistry, profiles *domain.ProfileR
 	return decision
 }
 
-// findProfile returns the profile referenced by id or name, or nil when no
-// profile matches.
-func findProfile(profiles *domain.ProfileRegistry, ref string) *domain.Profile {
+// FindProfile returns the profile referenced by id or name, or nil. It is
+// exported for the cross-source merge, which reads the profile fallback
+// policy when choosing between chapter candidates.
+func FindProfile(profiles *domain.ProfileRegistry, ref string) *domain.Profile {
 	for id, profile := range profiles.Profiles {
 		if id == ref || (profile != nil && profile.Name == ref) {
 			return profile
@@ -127,4 +128,56 @@ func groupName(groups *domain.GroupRegistry, canonicalID string) string {
 		return ""
 	}
 	return group.Aliases[0]
+}
+
+// ChapterCandidate is one candidate (source, chapter) for a chapter number
+// that has already been resolved against the profile.
+type ChapterCandidate struct {
+	SourceKey string
+	Chapter   domain.Chapter
+	Decision  domain.Decision
+}
+
+// BestCandidate picks the chapter candidate with the highest profile
+// preference across all sources for one chapter number (Sonarr-style
+// ordering; the scan-set is small, so a linear pass is fine):
+//
+//   - a preferred candidate always beats an unknown one, and the candidate
+//     whose group appears EARLIEST in the profile's preferredGroups wins;
+//   - preferred ties break by deterministic input order (source order);
+//   - ignored candidates are a hard rejection and never win;
+//   - when no preferred candidate exists, unknown candidates are accepted
+//     only under fallback any (the minimum-score-0 analog: "download
+//     lowest-preference"); fallback never rejects them.
+//
+// The second return is false when no candidate may be downloaded (every
+// candidate ignored, or only-unknown with fallback never).
+func BestCandidate(profile *domain.Profile, candidates []ChapterCandidate) (ChapterCandidate, bool) {
+	best := -1
+	bestIsPreferred := false
+
+	for i, candidate := range candidates {
+		switch candidate.Decision.Outcome {
+		case domain.OutcomeIgnored:
+			continue
+		case domain.OutcomePreferred:
+			if !bestIsPreferred || candidate.Decision.PreferredIndex < candidates[best].Decision.PreferredIndex {
+				best, bestIsPreferred = i, true
+			}
+		case domain.OutcomeUnknown:
+			if !bestIsPreferred && best == -1 {
+				best = i
+			}
+		}
+	}
+
+	if best == -1 {
+		return ChapterCandidate{}, false
+	}
+	if !bestIsPreferred && profile != nil && profile.Fallback == domain.FallbackNever {
+		// Only unknown candidates exist and the profile rejects unknowns.
+		return ChapterCandidate{}, false
+	}
+
+	return candidates[best], true
 }

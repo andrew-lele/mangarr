@@ -109,6 +109,14 @@ monitoredManga:
     #
     group: "/r/OnePunchMan"
 
+# Title-based form: track the series by title only. Mangarr searches every
+# SOURCE the qualityProfile's preferred groups map in groups.yaml (strict:
+# sources outside the profile are never scanned), finds the title, and
+# downloads the best group per profile preference. Omit source/manga/group.
+#
+#  Spy x Family:
+#    qualityProfile: "General Preferred"
+
   # Example Comix entry. Comix is behind a Cloudflare challenge; point
   # impersonationProxy at a local FlareSolverr-compatible relay to solve it
   # (see docs/USAGE.md).

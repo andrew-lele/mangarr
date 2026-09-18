@@ -18,6 +18,7 @@ import (
 	"mangarr/internal/registry"
 	"mangarr/internal/source"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
@@ -146,6 +147,13 @@ func runMonitorCycle(ctx context.Context, cfg domain.Config, log *logger.Default
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(maxConcurrentSourceProcesses)
 	for mangaTitle, monitoredManga := range cfg.MonitoredManga {
+		// Title+profile entries must resolve to a scan source; invalid
+		// entries are logged and skipped for this cycle (no hard abort, so a
+		// mid-run config edit cannot brick the watcher).
+		if err := registry.ValidateMonitoredEntry(mangaTitle, monitoredManga, &requestGroups, &requestProfiles, source.Keys()); err != nil {
+			log.Error().Err(err).Msg("invalid monitoredManga entry; skipping")
+			continue
+		}
 		group.Go(func() error {
 			if err := monitorManga(groupCtx, cfg, &requestGroups, &requestProfiles, mangaTitle, *monitoredManga, log); err != nil {
 				log.Error().Err(err).
@@ -160,6 +168,12 @@ func runMonitorCycle(ctx context.Context, cfg domain.Config, log *logger.Default
 }
 
 func monitorManga(ctx context.Context, cfg domain.Config, groups *domain.GroupRegistry, profiles *domain.ProfileRegistry, mangaTitle string, monitoredManga domain.MonitoredManga, log *logger.DefaultLogger) error {
+	// Title+qualityProfile entries (no source/manga) search the sources
+	// implied by the profile and acquire the best cross-source match.
+	if monitoredManga.Source == "" && monitoredManga.Manga == "" {
+		return monitorProfileManga(ctx, cfg, groups, profiles, mangaTitle, monitoredManga, log)
+	}
+
 	mangaSource, err := source.Select(monitoredManga)
 	if err != nil {
 		return fmt.Errorf("selecting manga source: %w", err)
@@ -201,15 +215,71 @@ func monitorManga(ctx context.Context, cfg domain.Config, groups *domain.GroupRe
 	if err != nil {
 		return err
 	}
+	reportAcquisition(mLog, result)
+
+	return nil
+}
+
+// monitorProfileManga tracks a title+qualityProfile entry: every source in
+// the profile's strict scan set is searched for the title, candidates are
+// merged, and the latest chapter number's highest-profile-preferred
+// non-ignored winner is acquired.
+func monitorProfileManga(ctx context.Context, cfg domain.Config, groups *domain.GroupRegistry, profiles *domain.ProfileRegistry, mangaTitle string, monitoredManga domain.MonitoredManga, log *logger.DefaultLogger) error {
+	mLog := log.With().Str("manga", mangaTitle).Str("source", "profile").Logger()
+
+	merged, winners, skips, err := trackTitle(ctx, groups, profiles, monitoredManga.QualityProfile, mangaTitle)
+	if err != nil {
+		return err
+	}
+	logTrackSkips(func(format string, args ...any) {
+		mLog.Info().Msgf(format, args...)
+	}, skips)
+
+	if len(merged.Chapters) == 0 {
+		return fmt.Errorf("getting chapters for manga %s", mangaTitle)
+	}
+
+	_, latestChapterNr, err := parse.MinMaxChapterNumbers(merged.Chapters)
+	if err != nil {
+		return fmt.Errorf("getting latest chapter number: %w", err)
+	}
+	winner, ok := winners[latestChapterNr]
+	if !ok {
+		return fmt.Errorf("finding chapter with number %s", latestChapterNr)
+	}
+
+	winnerLog := mLog.With().Str("source", winner.from.SourceKey).Logger()
+	result, err := acquire.Chapter(ctx, winnerLog, acquire.Request{
+		Source:             winner.from.Source,
+		SourceKey:          winner.from.SourceKey,
+		Manga:              merged,
+		Chapter:            winner.chapter,
+		DownloadDirectory:  cfg.DownloadLocation,
+		NamingTemplate:     cfg.NamingTemplate,
+		TitleOverride:      monitoredManga.Overwrite,
+		DryRun:             cfg.DryRun,
+		Groups:             groups,
+		Profiles:           profiles,
+		ProfileRef:         monitoredManga.QualityProfile,
+		ResolveNativeGroup: source.NewNativeGroupResolver(winner.from.SourceKey, winner.from.Source),
+	})
+	if err != nil {
+		return err
+	}
+	reportAcquisition(winnerLog, result)
+
+	return nil
+}
+
+// reportAcquisition logs a chapter acquisition result for monitor flows.
+func reportAcquisition(mLog zerolog.Logger, result acquire.Result) {
 	if result.Status == acquire.DryRun {
 		mLog.Info().Msgf("Would download %s -> %s%s", result.Name, result.Path, decisionLogSuffix(result.SourceKey, result.Decision))
-		return nil
+		return
 	}
 	if result.Status == acquire.Skipped {
 		mLog.Debug().Msgf("chapter has already been downloaded, skipping %s", result.Name)
-		return nil
+		return
 	}
 	mLog.Info().Msgf("finished downloading %s", result.Name)
-
-	return nil
 }
