@@ -387,8 +387,9 @@ func (c *comix) get(ctx context.Context, path string, params comixParams, destin
 	}
 	req.Header.Set("Accept", "application/json")
 	// The impersonation relay's browser mints the clearance cookie against a
-	// Chrome-shaped fingerprint; keep sending the matching profile so the
-	// cookie stays valid for requests issued directly from Mangarr.
+	// Chrome-shaped fingerprint. The relay transport adopts the browser's
+	// echoed User-Agent when the relay provides one; this hardcoded profile
+	// is the fallback for relays that do not echo it.
 	userAgent := "mangarr"
 	if c.Impersonating {
 		userAgent = comixImpersonatingUserAgent

@@ -42,7 +42,7 @@ func TestImpersonatingTransportMintsAndReusesClearanceCookie(t *testing.T) {
 		writeRelaySolution(t, w, []map[string]string{
 			{"name": "cf_clearance", "value": "aaaa"},
 			{"name": "__cf_bm", "value": "bbbb"},
-		})
+		}, "")
 	}))
 	defer relay.Close()
 
@@ -86,7 +86,7 @@ func TestImpersonatingTransportForwardsExistingCookiesWhenReSolving(t *testing.T
 		require.Len(t, payload.Cookies, 1)
 		require.Equal(t, "cf_clearance", payload.Cookies[0]["name"])
 		require.Equal(t, "stale", payload.Cookies[0]["value"])
-		writeRelaySolution(t, w, []map[string]string{{"name": "cf_clearance", "value": "fresh"}})
+		writeRelaySolution(t, w, []map[string]string{{"name": "cf_clearance", "value": "fresh"}}, "")
 	}))
 	defer relay.Close()
 
@@ -128,7 +128,7 @@ func TestImpersonatingTransportReSolvesOnChallengeResponse(t *testing.T) {
 		if hit == 1 {
 			value = "expired"
 		}
-		writeRelaySolution(t, w, []map[string]string{{"name": "cf_clearance", "value": value}})
+		writeRelaySolution(t, w, []map[string]string{{"name": "cf_clearance", "value": value}}, "")
 	}))
 	defer relay.Close()
 
@@ -154,7 +154,7 @@ func TestImpersonatingTransportLeavesNonTargetHostsAlone(t *testing.T) {
 
 	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		relayHits.Add(1)
-		writeRelaySolution(t, w, []map[string]string{{"name": "cf_clearance", "value": "aaaa"}})
+		writeRelaySolution(t, w, []map[string]string{{"name": "cf_clearance", "value": "aaaa"}}, "")
 	}))
 	defer relay.Close()
 
@@ -201,7 +201,7 @@ func TestImpersonatingTransportRequiresRelayCookies(t *testing.T) {
 	defer target.Close()
 
 	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeRelaySolution(t, w, []map[string]string{})
+		writeRelaySolution(t, w, []map[string]string{}, "")
 	}))
 	defer relay.Close()
 
@@ -211,6 +211,49 @@ func TestImpersonatingTransportRequiresRelayCookies(t *testing.T) {
 	_, err := client.Do(requireRequest(t, target.URL))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "relay returned no cookies")
+}
+
+func TestImpersonatingTransportAdoptsRelayUserAgent(t *testing.T) {
+	t.Parallel()
+
+	const relayUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, relayUA, r.Header.Get("User-Agent"))
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"ok": "true"}))
+	}))
+	defer target.Close()
+
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeRelaySolution(t, w, []map[string]string{{"name": "cf_clearance", "value": "aaaa"}}, relayUA)
+	}))
+	defer relay.Close()
+
+	transport := newImpersonatingTransportForTest(t, target, relay, []string{"127.0.0.1"})
+	client := http.Client{Timeout: 10 * time.Second, Transport: transport}
+
+	// The caller's own UA is set before the transport runs; the relay-echoed
+	// UA must win because the minted cookie is bound to it.
+	req := requireRequest(t, target.URL)
+	req.Header.Set("User-Agent", "mangarr")
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestApplySessionCookiesWithoutRelayUserAgentKeepsUA(t *testing.T) {
+	t.Parallel()
+
+	req := requireRequest(t, "https://example.target")
+	req.Header.Set("User-Agent", "mangarr")
+
+	applySessionCookies(req, relaySession{
+		cookies: map[string]string{"cf_clearance": "aaaa"},
+	})
+
+	require.Equal(t, "mangarr", req.Header.Get("User-Agent"))
+	require.Equal(t, "cf_clearance=aaaa", req.Header.Get("Cookie"))
 }
 
 func newImpersonatingTransportForTest(t *testing.T, target, relay *httptest.Server, targetHosts []string) *ImpersonatingTransport {
@@ -231,17 +274,24 @@ func requireRequest(t *testing.T, target string) *http.Request {
 	return req
 }
 
-func writeRelaySolution(t *testing.T, w http.ResponseWriter, cookies []map[string]string) {
+func writeRelaySolution(t *testing.T, w http.ResponseWriter, cookies []map[string]string, userAgent string) {
 	t.Helper()
 
+	solution := map[string]any{
+		"status":   200,
+		"headers":  map[string]any{},
+		"response": "<html>solved</html>",
+		"cookies":  cookies,
+	}
+	// Stock FlareSolverr echoes the browser UA; omit it when the call site
+	// simulates a relay that does not, so the absent-UA path stays covered.
+	if userAgent != "" {
+		solution["userAgent"] = userAgent
+	}
+
 	require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-		"status":  "ok",
-		"message": "Challenge solved!",
-		"solution": map[string]any{
-			"status":   200,
-			"headers":  map[string]any{},
-			"response": "<html>solved</html>",
-			"cookies":  cookies,
-		},
+		"status":   "ok",
+		"message":  "Challenge solved!",
+		"solution": solution,
 	}))
 }

@@ -55,11 +55,14 @@ type ImpersonatingTransport struct {
 	sessions    map[string]relaySession
 }
 
-// relaySession is the set of cookies a solve minted for one host and the
-// time they were obtained.
+// relaySession is the set of cookies a solve minted for one host, the time
+// they were obtained, and the browser User-Agent the relay used to solve the
+// challenge (if the relay echoes one). The clearance cookie is bound to that
+// UA, so the direct request must present it or Cloudflare rejects the cookie.
 type relaySession struct {
-	cookies map[string]string
-	minted  time.Time
+	cookies   map[string]string
+	minted    time.Time
+	userAgent string
 }
 
 // relayEnvelope is the subset of the FlareSolverr /v1 response DTO Mangarr
@@ -73,7 +76,8 @@ type relayEnvelope struct {
 }
 
 type relaySolution struct {
-	Cookies []relayCookie `json:"cookies"`
+	Cookies   []relayCookie `json:"cookies"`
+	UserAgent string        `json:"userAgent"`
 }
 
 type relayCookie struct {
@@ -241,7 +245,7 @@ func (t *ImpersonatingTransport) solve(req *http.Request) (relaySession, error) 
 		return relaySession{}, fmt.Errorf("solving Cloudflare challenge for %s: relay returned no cookies", host)
 	}
 
-	return relaySession{cookies: cookies, minted: time.Now()}, nil
+	return relaySession{cookies: cookies, minted: time.Now(), userAgent: envelope.Solution.UserAgent}, nil
 }
 
 func (t *ImpersonatingTransport) sessionFor(host string) (relaySession, bool) {
@@ -297,14 +301,19 @@ func relayCookieSpecs(cookies map[string]string) []map[string]string {
 }
 
 // applySessionCookies merges the minted clearance cookies into the request's
-// Cookie header, overriding any jar-supplied values with the same names. The
-// caller never reuses a request after RoundTrip, so mutating the header is
-// safe here.
+// Cookie header, overriding any jar-supplied values with the same names, and
+// adopts the relay-echoed browser User-Agent (the clearance cookie is bound
+// to the fingerprint that solved it) when the relay provided one. The caller
+// never reuses a request after RoundTrip, so mutating the headers is safe
+// here.
 func applySessionCookies(req *http.Request, session relaySession) {
 	if len(session.cookies) == 0 {
 		return
 	}
 	req.Header.Set("Cookie", mergeCookies(req.Header.Get("Cookie"), session.cookies))
+	if session.userAgent != "" {
+		req.Header.Set("User-Agent", session.userAgent)
+	}
 }
 
 func mergeCookies(existing string, fresh map[string]string) string {

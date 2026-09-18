@@ -65,7 +65,9 @@ intact.
 - Image downloads use `internal/download`'s own shared transport; if the
   image origin (comix.to/images) also enforces the challenge, a follow-up can
   reuse this transport for the image path (same clearance cookie TTL).
-- Adopting the relay's echoed `solution.userAgent` instead of the hardcoded
-  Chrome UA (one-line change once field-verified).
+- ~~Adopting the relay's echoed `solution.userAgent` instead of the hardcoded~~
+  ~~Chrome UA (one-line change once field-verified).~~ LANDED 2026-09-17
+  (`userAgent` in `relaySession`, `applySessionCookies` adopts it when the
+  relay echoes one; absent UA keeps the hardcoded fallback).
 - mangafire.to stays research-only (interactive Turnstile: no relay can
   solve it reliably today).

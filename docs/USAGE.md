@@ -327,10 +327,13 @@ monitoredManga:
 With `impersonationProxy` set, Mangarr asks the relay to solve Comix's
 challenge once (the relay runs the site's JavaScript in a real browser),
 keeps the minted clearance cookies, and then issues the API request directly
-from the same egress IP with a browser-shaped User-Agent. The relay is
-contacted again when the cookies age out (default 10 minutes) or the origin
-answers with a fresh challenge. `impersonationProxy` only affects the Comix
-source and must be a bare `http(s)://host[:port]` origin.
+from the same egress IP with the relay-echoed browser User-Agent (the
+clearance cookie is bound to the browser fingerprint that solved it, so a
+different UA gets a 403; relays that do not echo a UA keep Mangarr's
+Chrome-shaped fallback). The relay is contacted again when the cookies age
+out (default 10 minutes) or the origin answers with a fresh challenge.
+`impersonationProxy` only affects the Comix source and must be a bare
+`http(s)://host[:port]` origin.
 
 The relay is not bundled with Mangarr and no Chromium is required by the
 Mangarr image itself. Deploy FlareSolverr (or a compatible fork) separately,
