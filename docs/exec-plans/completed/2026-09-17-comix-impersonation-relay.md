@@ -1,6 +1,6 @@
 # Comix Cloudflare challenge: impersonation relay transport (2026-09-17)
 
-Status: implemented. Field verification on jihun pending: deploy a FlareSolverr-compatible relay and run the env-gated live test.
+Status: implemented. Relay end verified on jihun (2026-09-17): running FlareSolverr 3.5.0 (podman, 127.0.0.1:8191) solves comix.to's challenge in ~1.1s and mints a long-lived cf_clearance (.comix.to, expiry 2027); POST /v1 response matches the DTOs the transport was built against (solution.cookies carries the cookies; headers is omitted; userAgent echoed). Mangarr end pending deployment: run colmena apply on jihun, then monitor/download a comix entry with impersonationProxy set, or the live test MANGARR_LIVE_SOLVER_URL=http://127.0.0.1:8191.
 
 # Comix Cloudflare challenge: impersonation relay transport (2026-09-17)
 
