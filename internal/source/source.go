@@ -10,7 +10,7 @@ type constructor func(domain.MonitoredManga) domain.Source
 
 var registry = map[string]constructor{
 	"asurascans": func(m domain.MonitoredManga) domain.Source { return NewAsurascans(m.Manga) },
-	"atsumaru":   func(m domain.MonitoredManga) domain.Source { return NewAtsumaru(m.Manga, m.Group) },
+	"atsumaru":   func(m domain.MonitoredManga) domain.Source { return NewAtsumaru(m.Manga, m.Group, m.QualityProfile) },
 	"comix":      func(m domain.MonitoredManga) domain.Source { return NewComix(m.Manga, m.Group, m.ImpersonationProxy) },
 	"cubari":     func(m domain.MonitoredManga) domain.Source { return NewCubari(m.Manga, m.Group) },
 	"flamecomics": func(m domain.MonitoredManga) domain.Source {
@@ -41,8 +41,8 @@ func Select(monitoredManga domain.MonitoredManga) (domain.Source, error) {
 // bridges the chapter ScanID through the adapter's scanlator cache.
 var nativeResolvers = map[string]func(domain.Source) domain.NativeResolver{
 	"atsumaru": func(s domain.Source) domain.NativeResolver {
-		return func(groups *domain.GroupRegistry, nativeGroup string) string {
-			return s.(*atsumaru).ResolveNativeGroup(groups, nativeGroup)
+		return func(groups *domain.GroupRegistry, profile *domain.Profile, nativeGroup string) string {
+			return s.(*atsumaru).ResolveNativeGroup(groups, profile, nativeGroup)
 		}
 	},
 }

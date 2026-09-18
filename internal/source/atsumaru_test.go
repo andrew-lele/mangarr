@@ -56,7 +56,7 @@ func TestAtsumaruValidateInput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			src := NewAtsumaru(tt.input, "scan-1")
+			src := NewAtsumaru(tt.input, "scan-1", "")
 			err := src.ValidateInput()
 			if tt.wantErr == "" {
 				require.NoError(t, err)
@@ -68,13 +68,16 @@ func TestAtsumaruValidateInput(t *testing.T) {
 	}
 }
 
-func TestAtsumaruValidateInputRequiresScanID(t *testing.T) {
+func TestAtsumaruValidateInputScanID(t *testing.T) {
 	t.Parallel()
 
-	src := NewAtsumaru("https://atsu.moe/manga/Q5Mqy", "")
+	// Without a quality profile a scan ID remains required (back-compat).
+	src := NewAtsumaru("https://atsu.moe/manga/Q5Mqy", "", "")
+	require.EqualError(t, src.ValidateInput(), "atsumaru scan ID is required")
 
-	err := src.ValidateInput()
-	require.EqualError(t, err, "atsumaru scan ID is required")
+	// A quality-profile-driven manga may omit the pinned group entirely.
+	src = NewAtsumaru("https://atsu.moe/manga/Q5Mqy", "", "Preferred Scanlators")
+	require.NoError(t, src.ValidateInput())
 }
 
 func TestAtsumaruDiscover(t *testing.T) {
@@ -347,7 +350,7 @@ func TestAtsumaruGroupsRequiresMangaURL(t *testing.T) {
 	require.EqualError(t, err, "listing Atsumaru groups requires a manga URL")
 }
 
-func TestAtsumaruResolveNativeGroupBridgesScanIDThroughName(t *testing.T) {
+func TestAtsumaruResolveNativeGroupGreedyAcrossScanlators(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -366,16 +369,34 @@ func TestAtsumaruResolveNativeGroupBridgesScanIDThroughName(t *testing.T) {
 groups:
   a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
     aliases: [ "Asura" ]
+  b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c:
+    aliases: [ "Webtoon" ]
 `)
 
-	// The chapter's scoped ScanID bridges to the scanlator name, then the
-	// name resolves through the registry's AliasIndex to the canonical UUID.
-	require.Equal(t, "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b", src.ResolveNativeGroup(&groups, "scoped-asura"))
-	// A scoped id whose name is not registered resolves to nothing.
-	require.Equal(t, "", src.ResolveNativeGroup(&groups, "scoped-webtoon"))
-	// An unknown scoped id resolves to nothing either.
-	require.Equal(t, "", src.ResolveNativeGroup(&groups, "scoped-unknown"))
-	require.Equal(t, "", src.ResolveNativeGroup(&groups, "  "))
+	asuraFirst := &domain.Profile{PreferredGroups: []string{"Asura", "Webtoon"}}
+	// The chapter's scoped ScanID is per-manga, so the manga's scanlator
+	// NAMES are the candidates: profile order picks Asura even though the
+	// chapter's own id is webtoon-scoped.
+	require.Equal(t, "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b", src.ResolveNativeGroup(&groups, asuraFirst, "scoped-webtoon"))
+	require.Equal(t, "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b", src.ResolveNativeGroup(&groups, asuraFirst, "ignored-id"))
+
+	// Webtoon first in preferred order -> Webtoon canonical wins.
+	webtoonFirst := &domain.Profile{PreferredGroups: []string{"Webtoon", "Asura"}}
+	require.Equal(t, "b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c", src.ResolveNativeGroup(&groups, webtoonFirst, "scoped-asura"))
+
+	// Earliest preferred that is actually present wins: Flame (absent) is
+	// skipped, Asura (present) wins.
+	flameFirst := &domain.Profile{PreferredGroups: []string{"Flame", "Asura"}}
+	require.Equal(t, "a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b", src.ResolveNativeGroup(&groups, flameFirst, ""))
+
+	// No preferred match -> "" so resolve applies the unlisted policy.
+	none := &domain.Profile{PreferredGroups: []string{"Flame"}}
+	require.Equal(t, "", src.ResolveNativeGroup(&groups, none, "scoped-asura"))
+
+	// A nil profile resolves nothing; an empty cache resolves nothing.
+	require.Equal(t, "", src.ResolveNativeGroup(&groups, nil, "scoped-asura"))
+	empty := newTestAtsumaru(server.URL + "/manga/Q5Mqy")
+	require.Equal(t, "", empty.ResolveNativeGroup(&groups, asuraFirst, "scoped-asura"))
 }
 
 func TestAtsumaruDecisionPreferredThroughRealResolver(t *testing.T) {
@@ -404,8 +425,8 @@ profiles:
     ignoredGroups: [ ]
     fallback: "any"
 `, &groups)
-	resolver := func(groups *domain.GroupRegistry, nativeGroup string) string {
-		return src.ResolveNativeGroup(groups, nativeGroup)
+	resolver := func(groups *domain.GroupRegistry, profile *domain.Profile, nativeGroup string) string {
+		return src.ResolveNativeGroup(groups, profile, nativeGroup)
 	}
 	decision := resolve.ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-asura", "f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f", resolver)
 	require.Equal(t, domain.OutcomePreferred, decision.Outcome)
@@ -416,6 +437,42 @@ profiles:
 	decision = resolve.ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-asura", "f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f", nil)
 	require.Equal(t, domain.OutcomeUnknown, decision.Outcome)
 	require.Equal(t, "", decision.CanonicalID)
+}
+
+func TestAtsumaruDiscoverProfileDrivenIncludesEveryScanlator(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/manga/info":
+			fmt.Fprint(w, `{
+				"id": "Q5Mqy",
+				"title": "Kagurabachi",
+				"chapters": [
+					{"id": "chapter-1-a", "title": "Chapter 1", "number": 1, "scanId": "scan-1"},
+					{"id": "chapter-1-b", "title": "Chapter 1", "number": 1, "scanId": "scan-2"},
+					{"id": "chapter-2-a", "title": "Chapter 2", "number": 2, "scanId": "scan-1"}
+				]
+			}`)
+		case "/api/manga/page":
+			fmt.Fprint(w, `{"mangaPage":{"scanlators":[{"id":"scan-1","name":"Alpha"},{"id":"scan-2","name":"Delta"}]}}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	// Profile-driven discovery drops the pinned-ScanID filter, so chapters
+	// from every scanlator are discovered. The map is keyed by number: two
+	// scanlators translating chapter 1 means the LAST row the API returned
+	// wins that slot (documented limitation).
+	src := newTestAtsumaru(server.URL + "/manga/Q5Mqy")
+	src.QualityProfile = "Preferred Scanlators"
+	manga, err := src.Discover(t.Context())
+	require.NoError(t, err)
+	require.Len(t, manga.Chapters, 2)
+	require.Equal(t, "scan-2", manga.Chapters[mustChapterNumber("1")].Group)
+	require.Equal(t, "scan-1", manga.Chapters[mustChapterNumber("2")].Group)
 }
 
 func newTestAtsumaru(mangaURL string) *atsumaru {

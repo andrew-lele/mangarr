@@ -22,9 +22,12 @@ default in `internal/resolve`. Sources whose ids are scoped per-manga
 (atsumaru ScanIDs vary per manga for the same group name) register a
 `domain.NativeResolver` in `internal/source/source.go`
 (`NewNativeGroupResolver`, keyed by source name); the atsumaru resolver
-bridges the chapter ScanID through the adapter's cached manga-page
-scanlators to the stable scanlator NAME, then resolves that name through the
-registry's `AliasIndex`.
+GREEDILY matches the manga's cached scanlator names against the profile's
+`preferredGroups` order and returns the earliest preferred canonical (the
+resolver receives the found profile from resolve). Atsumaru discovery is
+profile-aware: a set `qualityProfile` disables the pinned-ScanID chapter
+filter so every scanlator's chapters reach acquisition, and `-g` becomes
+optional.
 
 ## Matrix
 
@@ -59,7 +62,7 @@ registry's `AliasIndex`.
 - `weebcentral` fetches chapter images from the `/chapters/<id>/images` HTML fragment
 - `comix` implements frontend build `35595e3de3c99889c1aa70`; it generates request tokens, decodes encrypted API envelopes, sends image request headers, and reconstructs scrambled tile images
 - Comix scramble hashes are opaque routing keys. The two known legacy hashes select explicit seed prefixes; unknown hashes use prefix zero, matching the frontend fallback.
-- `atsumaru` fetches chapter metadata from `/api/manga/info`, filters chapters by scan ID, and resolves relative page paths from `/api/read/chapter`; resolved page URLs on the `atsu.moe` host are rewritten to the CDN host `cdn.atsu.moe` (same path), mirroring the keiyoushi extension — the origin host serves 410 for `/static/pages/...`; `Discover` also loads `/api/manga/page` scanlators (non-fatal) so per-manga ScanIDs can bridge to canonical groups by name at resolve time
+- `atsumaru` fetches chapter metadata from `/api/manga/info`, filters chapters by scan ID (unless a qualityProfile is set, when every scanlator's chapters are kept), and resolves relative page paths from `/api/read/chapter`; resolved page URLs on the `atsu.moe` host are rewritten to the CDN host `cdn.atsu.moe` (same path), mirroring the keiyoushi extension — the origin host serves 410 for `/static/pages/...`; `Discover` also loads `/api/manga/page` scanlators (non-fatal) so per-manga ScanIDs can bridge to canonical groups by name at resolve time
 - source-specific image transforms use `domain.ImageProcessor`; the acquisition path owns transport and output while the source adapter owns the transform
 - shared request retries use `internal/sharedhttp/`; see the [retry policy and scraper limitations](./runtime-model.md#http-retry-lifecycle)
 - Manga Plus request errors omit query strings so registration and device secrets do not enter logs

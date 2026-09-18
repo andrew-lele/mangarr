@@ -40,8 +40,13 @@ type GroupRegistry struct {
 // unresolvable. The default (nil) maps "source:nativeGroup" through the
 // registry's NativeIndex; sources whose native ids are scoped per-manga
 // (atsumaru ScanIDs vary per manga for the same group name) supply a
-// resolver that bridges through source-owned data instead.
-type NativeResolver func(groups *GroupRegistry, nativeGroup string) string
+// resolver that bridges through source-owned data instead. The resolver
+// receives the profile already found by resolve (so it can honor
+// preferredGroups ORDER for greedy multi-candidate selection, e.g. one
+// atsumaru chapter number translated by several of the manga's scanlators)
+// and the chapter's native group id; it returns the BEST matching canonical
+// id and lets resolve apply the preferred/ignored/unlisted policy.
+type NativeResolver func(groups *GroupRegistry, profile *Profile, nativeGroup string) string
 
 // Profile is a named quality profile referencing canonical group UUIDs.
 type Profile struct {

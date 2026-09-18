@@ -293,6 +293,10 @@ must be set when comix.to answers direct requests with a challenge.
 - **atsumaru**: lists the manga's scanlators (`/api/manga/page`), because
 Atsumaru groups ARE the translators of a specific manga; `-m` is required
 and the scan ids returned are the `-g` values the manga's chapters carry.
+When the entry sets a `qualityProfile`, `-g` becomes optional: discovery
+includes chapters from EVERY scanlator and the greedy resolver picks the
+earliest scanlator in the profile's `preferredGroups` order whose name
+matches a registered alias (see [source inputs](#source-inputs)).
 - Sources without a scanlation-group model (`tcbscans`, `mangaplus`,
 `flamecomics`, `asurascans`, `cubari`, `weebcentral`, `mangadex`) print
 `source <name> does not expose scanlation groups` and exit 0, so scripts
@@ -319,7 +323,32 @@ mangarr version
 | [Cubari](https://cubari.moe/) | `cubari` | gist URL | required `-g` group such as `/r/OnePunchMan` |
 | [Weeb Central](https://weebcentral.com/) | `weebcentral` | full series URL | none |
 | [Comix](https://comix.to/) | `comix` | full `https://comix.to/title/...` URL | optional `-g` numeric group ID |
-| [Atsumaru](https://atsu.moe/) | `atsumaru` | full `https://atsu.moe/manga/...` URL | required `-g` scan ID |
+| [Atsumaru](https://atsu.moe/) | `atsumaru` | full `https://atsu.moe/manga/...` URL | `-g` scan ID required unless a `qualityProfile` is set |
+
+### Atsumaru quality profiles
+
+Atsumaru scan ids are scoped PER-MANGA (the same group has a different id on
+every manga), and several scanlators can translate the same chapter number.
+When the entry sets a `qualityProfile`:
+
+- `-g` becomes optional — discovery includes chapters from every scanlator;
+- the chapter's group decision greedily picks the earliest scanlator in the
+  profile's `preferredGroups` order whose name matches a registered alias in
+  `groups.yaml` (unregistered names are skipped, and ignored groups still
+  win over acceptance).
+
+```yaml
+monitoredManga:
+  Kagurabachi:
+    source: "atsumaru"
+    manga: "https://atsu.moe/manga/Q5Mqy"
+    qualityProfile: "Preferred Scanlators"
+```
+
+Known limitation: when several scanlators translate the SAME chapter number,
+the API returns one row per group and the chapter map keeps the last row it
+returned for that number — the profile decision reflects the greedy pick
+across the manga's scanlators, but that specific row is what downloads.
 
 Comix depends on the provider's current frontend. A Comix frontend update can require a Mangarr update. Use `-g` when a title has duplicate chapter numbers from different groups.
 

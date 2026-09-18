@@ -54,10 +54,11 @@ func newDownloadCommand(options *downloadOptions, root *rootOptions, selectSourc
 			}
 
 			s, err := selectSource(domain.MonitoredManga{
-				Source:   options.mangaSource,
-				Manga:    options.manga,
-				Group:    options.group,
-				Language: options.language,
+				Source:         options.mangaSource,
+				Manga:          options.manga,
+				Group:          options.group,
+				Language:       options.language,
+				QualityProfile: options.qualityProfile,
 			})
 			if err != nil {
 				if cmd.Flags().Changed("series") {

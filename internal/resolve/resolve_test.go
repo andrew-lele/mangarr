@@ -271,40 +271,83 @@ func TestResolveWithResolverUsesPerSourceExtension(t *testing.T) {
 groups:
   a1fdb8c3-4e90-4c52-9b7a-7d2e4c1a9f3b:
     aliases: [ "Asura" ]
+
+  b2ec9d4f-5a01-4d63-8c8b-8e3f5d2b0a4c:
+    aliases: [ "Webtoon" ]
+
+  d4e34b88-1000-4a4e-9c00-9e6f5d2b0a4c:
+    aliases: [ "Flame" ]
 `
 	profilesYAML := `version: 1
 
 profiles:
   f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f:
-    name: "Atsumaru Preferred"
-    preferredGroups: [ "Asura" ]
+    name: "Asura First"
+    preferredGroups: [ "Asura", "Webtoon" ]
+    ignoredGroups: [ ]
+    fallback: "any"
+
+  c3d11a76-2234-42e0-9b30-8e6f5d2b0a4c:
+    name: "Webtoon First"
+    preferredGroups: [ "Webtoon", "Asura" ]
     ignoredGroups: [ ]
     fallback: "any"
 `
 	groups, profiles := writeRegistry(t, groupsYAML, profilesYAML)
 
-	// A stub mimicking the atsumaru bridge: the chapter's scoped ScanID maps
-	// to the scanlator NAME first, and only the name is a registry key
+	// A stub mimicking the atsumaru greedy resolver: the chapter's scoped
+	// ScanID is per-manga, so the manga's scanlator NAMES are the
+	// candidates, and the profile's preferredGroups ORDER picks the winner
 	// (atsumaru ids are scoped per-manga, never "atsumaru:<id>" entries).
-	resolver := func(groups *domain.GroupRegistry, nativeGroup string) string {
-		if nativeGroup == "scoped-asura" {
-			return registry.ResolveGroupID(groups, "Asura")
+	resolver := func(groups *domain.GroupRegistry, profile *domain.Profile, nativeGroup string) string {
+		candidates := []string{"Webtoon", "Asura"}
+		for _, preferredRef := range profile.PreferredGroups {
+			canonical := registry.ResolveGroupID(groups, preferredRef)
+			if canonical == "" {
+				continue
+			}
+			for _, name := range candidates {
+				if registry.ResolveGroupID(groups, name) == canonical {
+					return canonical
+				}
+			}
 		}
 		return ""
 	}
 
+	// Asura wins because it is earlier in the preferred order, even though
+	// the resolver's candidates list Webtoon first and the chapter's own
+	// scoped id is arbitrary.
 	decision := ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-asura", profileID, resolver)
 	require.Equal(t, domain.OutcomePreferred, decision.Outcome)
 	require.Equal(t, 0, decision.PreferredIndex)
 	require.Equal(t, cpGroupID, decision.CanonicalID)
 
-	// A scoped id the resolver cannot bridge falls back to the profile's
-	// unlisted-group policy (fallback any -> unknown).
-	decision = ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-unknown", profileID, resolver)
+	// Webtoon first in preferred order -> Webtoon canonical wins.
+	webtoonProfile := "c3d11a76-2234-42e0-9b30-8e6f5d2b0a4c"
+	decision = ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-asura", webtoonProfile, resolver)
+	require.Equal(t, domain.OutcomePreferred, decision.Outcome)
+	require.Equal(t, 0, decision.PreferredIndex)
+	require.Equal(t, novaGroupID, decision.CanonicalID)
+
+	// No preferred candidate match falls back to the unlisted-group policy
+	// (fallback any -> unknown, no canonical).
+	flameOnly := "f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f"
+	flameProfilesYAML := `version: 1
+
+profiles:
+  f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f:
+    name: "Flame Only"
+    preferredGroups: [ "Flame" ]
+    ignoredGroups: [ ]
+    fallback: "any"
+`
+	testGroups, testProfiles := writeRegistry(t, groupsYAML, flameProfilesYAML)
+	decision = ResolveWithResolver(&testGroups, &testProfiles, "atsumaru", "scoped-asura", flameOnly, resolver)
 	require.Equal(t, domain.OutcomeUnknown, decision.Outcome)
 	require.Equal(t, "", decision.CanonicalID)
 
-	// The same chapter id through the DEFAULT (nil) resolver resolves
+	// The same scoped id through the DEFAULT (nil) resolver resolves
 	// nothing, because per-manga ids are never global NativeIndex keys.
 	decision = ResolveWithResolver(&groups, &profiles, "atsumaru", "scoped-asura", profileID, nil)
 	require.Equal(t, domain.OutcomeUnknown, decision.Outcome)

@@ -52,7 +52,7 @@ func ResolveWithResolver(groups *domain.GroupRegistry, profiles *domain.ProfileR
 
 	canonicalID := ""
 	if resolver != nil {
-		canonicalID = resolver(groups, nativeGroup)
+		canonicalID = resolver(groups, profile, nativeGroup)
 	} else {
 		canonicalID = registry.ResolveGroupID(groups, source+":"+nativeGroup)
 	}

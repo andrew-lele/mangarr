@@ -26,6 +26,13 @@ type atsumaru struct {
 	Client   *http.Client
 	BaseURL  string
 
+	// QualityProfile identifies the quality profile the caller assigned to
+	// this manga (from MonitoredManga.qualityProfile). When set, Discovery
+	// includes chapters from EVERY scanlator (no pinned-ScanID filter, so a
+	// group choice can be profile-driven) and an empty ScanID is allowed;
+	// when empty, the pinned-ScanID behavior is preserved for back-compat.
+	QualityProfile string
+
 	// Scanlators caches the manga page's scanlation groups (scoped ScanID +
 	// stable name) once fetched, in reader order. The cache feeds the group
 	// resolver bridge (ResolveNativeGroup): atsumaru ScanIDs are scoped
@@ -71,17 +78,18 @@ type atsumaruPage struct {
 	Image string `json:"image"`
 }
 
-func NewAtsumaru(mangaURL, scanID string) domain.Source {
+func NewAtsumaru(mangaURL, scanID, qualityProfile string) domain.Source {
 	client := http.Client{
 		Timeout:   60 * time.Second,
 		Transport: sharedhttp.Transport,
 	}
 
 	return &atsumaru{
-		MangaURL: mangaURL,
-		ScanID:   scanID,
-		Client:   &client,
-		BaseURL:  atsumaruURL,
+		MangaURL:       mangaURL,
+		ScanID:         scanID,
+		QualityProfile: qualityProfile,
+		Client:         &client,
+		BaseURL:        atsumaruURL,
 	}
 }
 
@@ -90,7 +98,7 @@ func NewAtsumaru(mangaURL, scanID string) domain.Source {
 // source adapter used for its Groups capability with the manga URL; the scan
 // ID is not needed for listing.
 func NewAtsumaruGroupLister(mangaURL string) domain.GroupLister {
-	return NewAtsumaru(mangaURL, "").(domain.GroupLister)
+	return NewAtsumaru(mangaURL, "", "").(domain.GroupLister)
 }
 
 func (a *atsumaru) String() string {
@@ -102,7 +110,7 @@ func (a *atsumaru) ValidateInput() error {
 		return fmt.Errorf("atsumaru manga URL is required")
 	}
 
-	if len(a.ScanID) == 0 {
+	if len(a.ScanID) == 0 && a.QualityProfile == "" {
 		return fmt.Errorf("atsumaru scan ID is required")
 	}
 
@@ -162,8 +170,14 @@ func (a *atsumaru) Discover(ctx context.Context) (domain.Manga, error) {
 		manga.ID = mangaID
 	}
 
+	// Pinned group mode (no qualityProfile): keep only the selected group's
+	// chapters, as before. Profile-driven mode: include chapters from EVERY
+	// scanlator (each row keeps its own ScanID as the Chapter.Group) so the
+	// greedy resolver can choose a group by profile preference. The chapter
+	// map is keyed by number; when several scanlators translate the same
+	// number, the last row the API returned wins the map slot.
 	for _, chapter := range mangaResp.Chapters {
-		if chapter.ScanID != a.ScanID {
+		if a.QualityProfile == "" && chapter.ScanID != a.ScanID {
 			continue
 		}
 
@@ -291,25 +305,43 @@ func (a *atsumaru) scanlatorName(scopedID string) string {
 	return ""
 }
 
-// ResolveNativeGroup bridges a chapter's manga-scoped ScanID to a canonical
-// group UUID: the ScanID is looked up in the cached manga-page scanlators to
-// get the group's stable NAME, which is then resolved through the registry's
-// AliasIndex (groups.yaml aliases). Returns "" when the ScanID or its name
-// is not registered, so the caller falls back to its unlisted-group policy.
-// This is the atsumaru implementation of the per-source resolver extension
-// (domain.NativeResolver); atsumaru native ids are per-manga, so they are
-// NEVER registry "atsumaru:<id>" keys.
-func (a *atsumaru) ResolveNativeGroup(groups *domain.GroupRegistry, nativeGroup string) string {
-	scopedID := strings.TrimSpace(nativeGroup)
-	if scopedID == "" {
-		return ""
-	}
-	name := a.scanlatorName(scopedID)
-	if name == "" {
+// ResolveNativeGroup implements the per-source resolver extension
+// (domain.NativeResolver) with GREEDY multi-candidate selection. An
+// atsumaru chapter number is scoped to one ScanID, but several of the
+// manga's scanlators can translate the same number, so the single chapter
+// id cannot pick a group; the manga's cached scanlator NAMES are the
+// candidates. The resolver walks the profile's preferredGroups in order and
+// returns the canonical UUID of the earliest preferred ref (alias or UUID)
+// whose canonical is also one of the manga's scanlators; a nil/unknown
+// nativeGroup is ignored. No preferred match returns "" so resolve applies
+// its unlisted-group policy (ignoredGroups still checked by resolve).
+func (a *atsumaru) ResolveNativeGroup(groups *domain.GroupRegistry, profile *domain.Profile, nativeGroup string) string {
+	if profile == nil || len(a.Scanlators) == 0 {
 		return ""
 	}
 
-	return groupregistry.ResolveGroupID(groups, name)
+	for _, preferredRef := range profile.PreferredGroups {
+		canonical := groupregistry.ResolveGroupID(groups, preferredRef)
+		if canonical == "" {
+			continue
+		}
+		if a.hasScanlatorNamed(groups, canonical) {
+			return canonical
+		}
+	}
+
+	return ""
+}
+
+// hasScanlatorNamed reports whether any of the manga's cached scanlator
+// names resolves to the canonical group UUID.
+func (a *atsumaru) hasScanlatorNamed(groups *domain.GroupRegistry, canonical string) bool {
+	for _, scanlator := range a.Scanlators {
+		if groupregistry.ResolveGroupID(groups, scanlator.Name) == canonical {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *atsumaru) extractMangaID() (string, error) {
