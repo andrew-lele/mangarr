@@ -290,3 +290,130 @@ func (s *pageSource) Pages(context.Context, domain.Chapter) ([]domain.ImageInfo,
 	s.calls++
 	return s.pages, s.err
 }
+
+func TestChapterSkipsSameNumberWithDifferentTitle(t *testing.T) {
+	t.Parallel()
+
+	server := pngServer(t)
+	defer server.Close()
+
+	source := &pageSource{pages: []domain.ImageInfo{{ImageURL: server.URL}}}
+	base := Request{
+		Source:            source,
+		Manga:             domain.Manga{Title: "Blue Lock"},
+		DownloadDirectory: t.TempDir(),
+		NamingTemplate:    "{manga:<.>} Ch. {num:3}{title: - <.>}",
+	}
+
+	// First flow: source-pinned discovery carries no chapter title.
+	first := base
+	first.Chapter = domain.Chapter{Number: mustChapterNumber("361")}
+	result, err := Chapter(t.Context(), zerolog.Nop(), first)
+	require.NoError(t, err)
+	require.Equal(t, Downloaded, result.Status)
+	require.NoFileExists(t, filepath.Join(first.DownloadDirectory, "Blue Lock", "Blue Lock Ch. 361 - Chapter 361.cbz"))
+
+	// Second flow (title+profile): the same chapter number now carries the
+	// "Chapter 361" title -> a DIFFERENT rendered filename. The skip must
+	// still fire because the chapter NUMBER is already present.
+	second := base
+	second.Chapter = domain.Chapter{Number: mustChapterNumber("361"), Title: "Chapter 361"}
+	result, err = Chapter(t.Context(), zerolog.Nop(), second)
+	require.NoError(t, err)
+	require.Equal(t, Skipped, result.Status)
+	require.Equal(t, 1, source.calls, "skip must not resolve pages")
+
+	entries, err := os.ReadDir(filepath.Join(second.DownloadDirectory, "Blue Lock"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the duplicate title variant must not be created")
+}
+
+func TestChapterSkipsDecimalSameNumberWithDifferentTitle(t *testing.T) {
+	t.Parallel()
+
+	server := pngServer(t)
+	defer server.Close()
+
+	source := &pageSource{pages: []domain.ImageInfo{{ImageURL: server.URL}}}
+	base := Request{
+		Source:            source,
+		Manga:             domain.Manga{Title: "Blue Lock"},
+		DownloadDirectory: t.TempDir(),
+		NamingTemplate:    "{manga:<.>} Ch. {num}{title: - <.>}",
+	}
+
+	first := base
+	first.Chapter = domain.Chapter{Number: mustChapterNumber("112.5")}
+	result, err := Chapter(t.Context(), zerolog.Nop(), first)
+	require.NoError(t, err)
+	require.Equal(t, Downloaded, result.Status)
+
+	second := base
+	second.Chapter = domain.Chapter{Number: mustChapterNumber("112.5"), Title: "Chapter 112.5"}
+	result, err = Chapter(t.Context(), zerolog.Nop(), second)
+	require.NoError(t, err)
+	require.Equal(t, Skipped, result.Status)
+
+	// Force bypasses the number-based skip and re-downloads.
+	second.Force = true
+	result, err = Chapter(t.Context(), zerolog.Nop(), second)
+	require.NoError(t, err)
+	require.Equal(t, Downloaded, result.Status)
+
+	entries, err := os.ReadDir(filepath.Join(second.DownloadDirectory, "Blue Lock"))
+	require.NoError(t, err)
+	require.Len(t, entries, 2, "force replaces by creating the title variant next to the original")
+}
+
+func TestArchiveForChapterExists(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeFile(t, dir, "Blue Lock Ch. 361.cbz", "x")
+	writeFile(t, dir, "Blue Lock Ch. 112.5 - Chapter 112.5.cbz", "x")
+	writeFile(t, dir, "Blue Lock Ch. 007.cbz", "x") // padded {num:3} form
+	writeFile(t, dir, "Blue Lock - 999.cbz", "x")   // no marker: exact-match only
+
+	exact := filepath.Join(dir, "nothing.cbz")
+	exists, err := archiveForChapterExists(dir, mustChapterNumber("361"), exact)
+	require.NoError(t, err)
+	require.True(t, exists)
+
+	exists, err = archiveForChapterExists(dir, mustChapterNumber("112.5"), exact)
+	require.NoError(t, err)
+	require.True(t, exists)
+
+	// Pad-normalized equality: archive "Ch. 007" covers chapter 7.
+	exists, err = archiveForChapterExists(dir, mustChapterNumber("7"), exact)
+	require.NoError(t, err)
+	require.True(t, exists)
+
+	// Missing chapter and no marker => false.
+	exists, err = archiveForChapterExists(dir, mustChapterNumber("8"), exact)
+	require.NoError(t, err)
+	require.False(t, exists)
+
+	exists, err = archiveForChapterExists(dir, mustChapterNumber("999"), filepath.Join(dir, "Blue Lock - 999.cbz"))
+	require.NoError(t, err)
+	require.True(t, exists, "no-marker template still matches its exact rendered name")
+
+	// A missing series directory is not present.
+	exists, err = archiveForChapterExists(filepath.Join(t.TempDir(), "nope"), mustChapterNumber("1"), exact)
+	require.NoError(t, err)
+	require.False(t, exists)
+}
+
+func pngServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	var imageBytes bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.Black)
+	require.NoError(t, png.Encode(&imageBytes, img))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(imageBytes.Bytes())
+	}))
+	return server
+}
