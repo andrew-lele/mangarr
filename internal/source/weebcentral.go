@@ -26,7 +26,7 @@ const (
 	weebcentralBrowserUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
-var weebcentralChapterNumberPattern = regexp.MustCompile(`(?:Chapter|Ch.) ?(\d+(\.\d+)?)`)
+var weebcentralChapterNumberPattern = regexp.MustCompile(`(?:Chapter|Ch\.|Mission) ?(\d+(\.\d+)?)`)
 
 type weebcentral struct {
 	MangaURL  string
@@ -125,21 +125,26 @@ func (w *weebcentral) getChapters(ctx context.Context, manga domain.Manga) error
 		errors = append(errors, fmt.Errorf("requesting URL %s: %w", r.Request.URL, err))
 	})
 
-	// The chapter list now lives on the SERIES page itself; the
-	// /full-chapter-list endpoint answers with a 404 page wrapper and the
-	// old 'a.flex' + span.grow selectors match nothing (field-verified on
-	// jihun, 2026-09-18). Current anchor markup:
+	// The full chapter list is served by the /full-chapter-list FRAGMENT that
+	// the series page's "See all chapters" button htmx-loads into
+	// #chapter-list; the static series page itself only renders recent /
+	// last-read rows (9 anchors for a 158-chapter series), so it cannot be
+	// the chapter source. Fragment rows (field-verified 2026-09-18):
 	//
-	//	<a href="/chapters/01K7JP7T3V8ZVZJSGF99FFH55K"
-	//	   class="hover:bg-base-300 flex-1 flex items-center p-2">Chapter 147 Last Read</a>
+	//	<a href="/chapters/01M19K9XZJ3BMNB4SW07ZQ8JYE"
+	//	   class="hover:bg-base-300 flex-1 flex items-center p-2">
+	//	    <span class="grow flex items-center gap-2">
+	//	      <span class="">Mission 140</span>   (or "Chapter 147")
+	//	      <span class="hidden md:inline">Last Read</span>
+	//	    </span>
+	//	    <time ...>2026-08-30...</time>
+	//	</a>
 	//
 	// Only anchors whose href is a /chapters/<id> link are chapter rows;
-	// everything else on the page (navbar, related series, the "See all
-	// chapters" link pointing at /series/.../full-chapter-list) is skipped.
-	// The inner text may carry a trailing "Last Read" marker; the chapter
-	// number regex only consumes the "Chapter N" prefix. If the series page
-	// ever truncates the list to recent chapters instead of serving all of
-	// them, re-follow the /series/.../full-chapter-list link here.
+	// everything else in the fragment is skipped. The chapter name is read
+	// from span.grow (the row's date lives outside it), accepting the
+	// series-dependent naming ("Chapter"/"Ch."/"Mission") and ignoring the
+	// trailing "Last Read" marker; unparseable rows are skipped.
 	c.OnHTML("a", func(e *colly.HTMLElement) {
 		href := e.Attr("href")
 		if !strings.HasPrefix(href, "/chapters/") {
@@ -152,7 +157,7 @@ func (w *weebcentral) getChapters(ctx context.Context, manga domain.Manga) error
 			return
 		}
 
-		number, err := w.getChapterNumber(e.Text)
+		number, err := w.getChapterNumber(e.ChildText("span.grow"))
 		if err != nil {
 			// Skip chapters that don't match the regex pattern instead of failing
 			return
@@ -164,9 +169,14 @@ func (w *weebcentral) getChapters(ctx context.Context, manga domain.Manga) error
 		}
 	})
 
-	err := c.Visit(w.MangaURL)
+	path, err := fullChapterListURL(w.MangaURL)
 	if err != nil {
-		return fmt.Errorf("visiting URL %s: %w", w.MangaURL, err)
+		return err
+	}
+
+	err = c.Visit(path)
+	if err != nil {
+		return fmt.Errorf("visiting URL %s: %w", path, err)
 	}
 
 	if len(errors) > 0 {
@@ -178,6 +188,25 @@ func (w *weebcentral) getChapters(ctx context.Context, manga domain.Manga) error
 	}
 
 	return nil
+}
+
+// fullChapterListURL builds the /full-chapter-list fragment URL for a
+// series page URL. The fragment lives at /series/<id>/full-chapter-list
+// WITHOUT the title slug: joining "full-chapter-list" onto the full series
+// URL yields /series/<id>/<slug>/full-chapter-list, which the site answers
+// with its /404 page (verified 2026-09-18 on jihun against the real site).
+func fullChapterListURL(mangaURL string) (string, error) {
+	parsed, err := url.Parse(mangaURL)
+	if err != nil {
+		return "", fmt.Errorf("parsing URL %s: %w", mangaURL, err)
+	}
+
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) < 2 || segments[0] != "series" || segments[1] == "" {
+		return "", fmt.Errorf("URL %s is not a /series/<id>/<slug> page", mangaURL)
+	}
+
+	return fmt.Sprintf("%s://%s/series/%s/full-chapter-list", parsed.Scheme, parsed.Host, segments[1]), nil
 }
 
 // Pages gets all image URLs for a chapter.

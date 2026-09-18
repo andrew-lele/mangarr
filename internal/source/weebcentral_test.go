@@ -53,31 +53,38 @@ func TestWeebCentralPagesExtractsChapterAssets(t *testing.T) {
 	require.Equal(t, server.URL+"/media/chapter-002.png", pages[1].ImageURL)
 }
 
-func TestWeebCentralScrapesSeriesPageChapterList(t *testing.T) {
+func TestWeebCentralScrapesFullChapterListFragment(t *testing.T) {
 	t.Parallel()
 
 	const chapterPath = "/chapters/01CHAP356"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/series/series-id":
-			// Current weebcentral markup (field-verified 2026-09-18): chapter
-			// rows are <a href="/chapters/<id>">Chapter N[ Last Read]</a>;
-			// navbar/related links and the "See all chapters" anchor must not
-			// become chapters.
-			fmt.Fprint(w, `<html><body>
-				<nav>
-					<a href="/about">About</a>
-					<a href="https://weebcentral.com/series/series-id/more">More series</a>
-				</nav>
-				<section>
-					<a class="hover:bg-base-300 flex-1 flex items-center p-2" href="/chapters/01CHAP356">Chapter 356 Last Read</a>
-					<a class="hover:bg-base-300 flex-1 flex items-center p-2" href="/chapters/01CHAP357">Chapter 357</a>
-					<a class="hover:bg-base-300 flex-1 flex items-center p-2" href="/chapters/01CHAP3575">Chapter 357.5</a>
-					<a class="hover:bg-base-300 flex-1 flex items-center p-2" href="/chapters/01CHAPJUNK">Read the latest</a>
-					<a class="flex" href="/series/series-id/full-chapter-list">See all chapters</a>
-				</section>
-			</body></html>`)
+		case "/series/series-id/full-chapter-list":
+			// The htmx fragment the series page's "See all chapters" button
+			// loads (field-verified 2026-09-18): rows are <a
+			// href="/chapters/<id>"> with the name and an optional "Last
+			// Read" marker inside a span.grow and the row date outside it.
+			// Names are series-dependent ("Chapter"/"Mission"). Non-chapter
+			// anchors in the fragment must not become chapters.
+			fmt.Fprint(w, `<a href="/about">About</a>
+				<a class="hover:bg-base-300 flex-1 flex items-center p-2" href="/chapters/01CHAP356">
+					<span class="grow flex items-center gap-2"><span class="">Chapter 356</span><span class="hidden md:inline">Last Read</span></span>
+					<time datetime="2026-08-30T15:06:15.410Z">2026-08-30T15:06:15.410545Z</time>
+				</a>
+				<a class="hover:bg-base-300 flex-1 flex items-center p-2" href="/chapters/01CHAP357">
+					<span class="grow flex items-center gap-2"><span class="">Chapter 357</span></span>
+				</a>
+				<a class="hover:bg-base-300 flex-1 flex items-center p-2" href="/chapters/01CHAP3575">
+					<span class="grow flex items-center gap-2"><span class="">Chapter 357.5</span></span>
+				</a>
+				<a class="hover:bg-base-300 flex-1 flex items-center p-2" href="/chapters/01CHAPMISS">
+					<span class="grow flex items-center gap-2"><span class="">Mission 140</span></span>
+				</a>
+				<a class="hover:bg-base-300 flex-1 flex items-center p-2" href="/chapters/01CHAPJUNK">
+					<span class="grow flex items-center gap-2"><span class="">Read the latest</span></span>
+				</a>
+				<a class="flex" href="/series/series-id/more">Related series</a>`)
 		case chapterPath + "/images":
 			fmt.Fprint(w, `<img src="/media/chapter-356.png" />`)
 		default:
@@ -88,17 +95,19 @@ func TestWeebCentralScrapesSeriesPageChapterList(t *testing.T) {
 
 	src := newTestWeebCentral(server.URL+"/series/series-id", server.URL)
 	manga := domain.Manga{
-		Title:    "Blue Lock",
+		Title:    "Spy x Family",
 		Chapters: make(map[domain.ChapterNumber]domain.Chapter),
 	}
 
 	require.NoError(t, src.getChapters(t.Context(), manga))
-	// Three parseable chapter rows; the "Last Read" marker is stripped by
-	// the number regex, junk-title and non-/chapters/ anchors are skipped.
-	require.Len(t, manga.Chapters, 3)
+	// Four parseable chapter rows: "Last Read" marker and the row date are
+	// stripped, "Mission" naming parses, junk-title and non-/chapters/
+	// anchors are skipped.
+	require.Len(t, manga.Chapters, 4)
 	require.Equal(t, server.URL+"/chapters/01CHAP356", manga.Chapters[mustChapterNumber("356")].URL)
 	require.Equal(t, server.URL+"/chapters/01CHAP357", manga.Chapters[mustChapterNumber("357")].URL)
 	require.Equal(t, server.URL+"/chapters/01CHAP3575", manga.Chapters[mustChapterNumber("357.5")].URL)
+	require.Equal(t, server.URL+"/chapters/01CHAPMISS", manga.Chapters[mustChapterNumber("140")].URL)
 
 	// The discovered chapter drives the existing pages flow unchanged.
 	pages, err := src.Pages(t.Context(), manga.Chapters[mustChapterNumber("356")])
@@ -109,8 +118,8 @@ func TestWeebCentralScrapesSeriesPageChapterList(t *testing.T) {
 func TestWeebCentralGetChaptersErrorsWhenPageHasNoChapterAnchors(t *testing.T) {
 	t.Parallel()
 
-	// The /full-chapter-list endpoint now answers with a 404 page wrapper;
-	// scraping it must fail the same way a chapterless series page does.
+	// A chapterless fragment (or a wrapped 404 body) must fail the same way
+	// a genuinely empty series does.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `<html><head><title>404 | Weeb Central</title></head><body><a href="/">Home</a><a href="/series/series-id">Back</a></body></html>`)
 	}))
@@ -157,6 +166,25 @@ func TestWeebCentralRejectsPrefixHostSpoofing(t *testing.T) {
 	if err := source.ValidateInput(); err == nil {
 		t.Fatal("expected spoofed host to fail validation")
 	}
+}
+
+func TestWeebCentralFullChapterListURLDropsSlug(t *testing.T) {
+	t.Parallel()
+
+	// The fragment lives at /series/<id>/full-chapter-list WITHOUT the
+	// title slug; joining onto the full series URL (slug included) hits a
+	// 404 redirect — the root cause of the long-series failure.
+	got, err := fullChapterListURL("https://weebcentral.com/series/01J76XYCYJ0P680SKX3QZ0NQD7/Spy-X-Family")
+	require.NoError(t, err)
+	require.Equal(t, "https://weebcentral.com/series/01J76XYCYJ0P680SKX3QZ0NQD7/full-chapter-list", got)
+
+	// Trailing slash and non-series URLs are handled or rejected.
+	got, err = fullChapterListURL("https://weebcentral.com/series/01J76XYCYJ0P680SKX3QZ0NQD7/Spy-X-Family/")
+	require.NoError(t, err)
+	require.Equal(t, "https://weebcentral.com/series/01J76XYCYJ0P680SKX3QZ0NQD7/full-chapter-list", got)
+
+	_, err = fullChapterListURL("https://weebcentral.com/chapters/01TESTCHAPTER")
+	require.ErrorContains(t, err, "not a /series/<id>/<slug> page")
 }
 
 func newTestWeebCentral(mangaURL, baseURL string) *weebcentral {
