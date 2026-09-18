@@ -149,6 +149,59 @@ func TestAtsumaruDiscoverErrorsWhenNoChapters(t *testing.T) {
 	require.EqualError(t, err, "getting chapters for manga Kagurabachi")
 }
 
+func TestAtsumaruResolveImageURLUsesCDN(t *testing.T) {
+	t.Parallel()
+
+	src := newTestAtsumaru("https://atsu.moe/manga/Q5Mqy")
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "relative path", raw: "/static/pages/p1/c1/x.avif", want: "https://cdn.atsu.moe/static/pages/p1/c1/x.avif"},
+		{name: "absolute atsu.moe", raw: "https://atsu.moe/static/pages/p1/c1/x.avif", want: "https://cdn.atsu.moe/static/pages/p1/c1/x.avif"},
+		{name: "protocol-relative", raw: "//atsu.moe/static/pages/p1/c1/x.avif", want: "https://cdn.atsu.moe/static/pages/p1/c1/x.avif"},
+		{name: "http scheme", raw: "http://atsu.moe/static/pages/p1/c1/x.avif", want: "https://cdn.atsu.moe/static/pages/p1/c1/x.avif"},
+		{name: "query preserved", raw: "/static/pages/p1/c1/x.avif?token=abc123", want: "https://cdn.atsu.moe/static/pages/p1/c1/x.avif?token=abc123"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := src.resolveImageURL(tt.raw)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestAtsumaruResolveImageURLKeepsOtherHosts(t *testing.T) {
+	t.Parallel()
+
+	src := newTestAtsumaru("https://atsu.moe/manga/Q5Mqy")
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "already CDN host", raw: "https://cdn.atsu.moe/static/pages/p1/c1/x.avif", want: "https://cdn.atsu.moe/static/pages/p1/c1/x.avif"},
+		{name: "foreign host", raw: "https://s3.amazonaws.com/static/pages/p1/c1/x.avif", want: "https://s3.amazonaws.com/static/pages/p1/c1/x.avif"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := src.resolveImageURL(tt.raw)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestAtsumaruPages(t *testing.T) {
 	t.Parallel()
 

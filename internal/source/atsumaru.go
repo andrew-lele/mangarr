@@ -251,5 +251,16 @@ func (a *atsumaru) resolveImageURL(rawImageURL string) (string, error) {
 		return "", err
 	}
 
-	return base.ResolveReference(imageURL).String(), nil
+	resolved := base.ResolveReference(imageURL)
+	// Image content is served from the CDN host: the chapter API resolves page
+	// URLs to atsu.moe, whose /static/pages/... paths answer 410 while the same
+	// content on cdn.atsu.moe returns 200. Mirror keiyoushi's host rewrite
+	// (https://atsu.moe/... -> https://cdn.atsu.moe/...) leaving the path
+	// untouched; any other host passes through unchanged.
+	if strings.ToLower(resolved.Hostname()) == "atsu.moe" {
+		resolved.Scheme = "https"
+		resolved.Host = "cdn." + resolved.Host
+	}
+
+	return resolved.String(), nil
 }
