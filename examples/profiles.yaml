@@ -1,0 +1,38 @@
+# profiles.yaml — MangaRR quality profiles (example).
+#
+# Profiles reference canonical group UUIDs (or aliases) from groups.yaml —
+# never source-native ids — so one profile works across every source.
+#
+# Resolution (per chapter at download time):
+#   1. source returns the chapter's native group id (comix GroupID, atsumaru
+#      scoped id, ...)
+#   2. groups.yaml maps it to a canonical UUID (atsumaru bridges by name)
+#   3. this file decides: preferred (ordered) / ignored (never) / unknown
+#
+# `fallback: any` accepts groups not listed (lowest preference, Sonarr
+# convention); `fallback: never` rejects anything not preferred/known.
+version: 1
+
+profiles:
+  # User's general manga/webtoon preference order (2026-09-18):
+  # Flame > O Translations > Asura > Lagoon Scans > Webtoon > Thunder,
+  # with Demonic + Hades Scans hard-blocked.
+  a1c2e3f4-5678-4abc-9def-0123456789ab:
+    name: "General Preferred"
+    preferredGroups:
+      - "d4edcab7-4261-44ee-bf3f-85478184e56f"   # Flame
+      - "63076ab7-0d09-44a1-bd3f-05213f65b6f3"   # O Translations
+      - "cc99084c-19b1-41a8-b94d-b8750a7cbae8"   # Asura
+      - "68b34737-14c6-44a5-8b2b-e3b49bfa039c"   # Lagoon Scans
+      - "b5785157-b5c4-4a46-ba4a-2e789a3e7b1f"   # Webtoon
+      - "436b5cfb-6349-4c60-9384-1e873437df27"   # Thunder
+    ignoredGroups:
+      - "3ffb5a9a-8c22-4010-87e7-202313cac93c"   # Demonic
+      - "e1dad4de-cc00-44a9-97c1-690b34fadf9d"   # Hades Scans
+    fallback: "any"
+
+  f47ac10b-58b9-4b56-8b4d-8e0c3d5e9a2f:
+    name: "Default"
+    preferredGroups: [ ]
+    ignoredGroups: [ ]
+    fallback: "any"

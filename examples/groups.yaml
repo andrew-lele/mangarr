@@ -1,0 +1,53 @@
+# groups.yaml — canonical scanlation-group registry (example).
+#
+# KEYED BY canonical OPAQUE UUID. Each entry has human-readable `aliases` and
+# per-source NATIVE ids. Mangarr resolves a chapter's group to one of these
+# canonical ids, then quality profiles (profiles.yaml) reference them.
+#
+# Native id lookup:
+#   comix    -> numeric group id (GroupID, used as ?group_id=)
+#   mangadex -> scanlation group uuid (future)
+#   atsumaru -> NO id needed: atsumaru group ids are scoped per-manga, so the
+#              atsumaru resolver bridges the chapter's scoped id -> scanlator
+#              NAME -> this registry's aliases. Just list the group name under
+#              `aliases`; do not fill `sources.atsumaru`.
+#
+# This is the USER'S preference set (2026-09-18): prefer Flame > O Translations
+# > Asura > Lagoon Scans > Webtoon > Thunder; hard-ignore Demonic + Hades Scans.
+version: 1
+
+groups:
+  d4edcab7-4261-44ee-bf3f-85478184e56f:
+    aliases: [ "Flame" ]
+    sources: { }
+
+  63076ab7-0d09-44a1-bd3f-05213f65b6f3:
+    aliases: [ "O Translations" ]
+    sources:
+      comix: "2394"
+
+  cc99084c-19b1-41a8-b94d-b8750a7cbae8:
+    aliases: [ "Asura", "Asura Scans" ]
+    sources:
+      comix: "4725"
+
+  68b34737-14c6-44a5-8b2b-e3b49bfa039c:
+    aliases: [ "Lagoon Scans" ]
+    sources:
+      comix: "9641"
+
+  b5785157-b5c4-4a46-ba4a-2e789a3e7b1f:
+    aliases: [ "Webtoon" ]
+    sources: { }
+
+  436b5cfb-6349-4c60-9384-1e873437df27:
+    aliases: [ "Thunder" ]
+    sources: { }
+
+  3ffb5a9a-8c22-4010-87e7-202313cac93c:
+    aliases: [ "Demonic" ]
+    sources: { }
+
+  e1dad4de-cc00-44a9-97c1-690b34fadf9d:
+    aliases: [ "Hades Scans", "Hades" ]
+    sources: { }
