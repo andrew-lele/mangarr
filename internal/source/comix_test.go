@@ -320,6 +320,89 @@ func TestComixExtractIDRequiresCanonicalTitleURL(t *testing.T) {
 	require.EqualError(t, err, "URL must use https://comix.to")
 }
 
+func TestComixGroupsListsCatalog(t *testing.T) {
+	t.Parallel()
+
+	codec, err := newComixCodec()
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/groups" {
+			t.Errorf("path = %q, want /api/v1/groups", r.URL.Path)
+		}
+		if r.URL.Query().Get("keyword") != "flame" {
+			t.Errorf("missing keyword query")
+		}
+		params := comixParams{"keyword": "flame", "limit": 100}
+		expectedToken, err := codec.token(r.URL.Path, params)
+		if err != nil {
+			t.Errorf("generating expected token: %v", err)
+			return
+		}
+		if r.URL.Query().Get("_") != expectedToken {
+			t.Errorf("token = %q, want %q", r.URL.Query().Get("_"), expectedToken)
+		}
+
+		writeEncryptedComixResponse(t, w, codec, map[string]any{
+			"items": []map[string]any{
+				{"id": 9641, "name": "Flame Comics", "slug": "flame-comics"},
+				{"id": 0, "name": "Broken row"},
+				{"id": 8421, "name": "Asura Scans", "slug": ""},
+			},
+		})
+	}))
+	defer server.Close()
+
+	source := newTestComix(t, server, "https://comix.to/title/pvry-one-piece", "")
+	groups, err := source.Groups(t.Context(), "flame")
+	require.NoError(t, err)
+	require.Len(t, groups, 2)
+	require.Equal(t, "9641", groups[0].ID)
+	require.Equal(t, "Flame Comics", groups[0].Name)
+	require.Equal(t, "flame-comics", groups[0].Slug)
+	require.Equal(t, "8421", groups[1].ID)
+	require.Equal(t, "Asura Scans", groups[1].Name)
+	require.Equal(t, "", groups[1].Slug)
+}
+
+func TestComixGroupsWithoutQueryListsFirstPage(t *testing.T) {
+	t.Parallel()
+
+	codec, err := newComixCodec()
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("keyword") != "" {
+			t.Errorf("unexpected keyword query %q", r.URL.Query().Get("keyword"))
+		}
+		params := comixParams{"limit": 100}
+		expectedToken, err := codec.token(r.URL.Path, params)
+		if err != nil {
+			t.Errorf("generating expected token: %v", err)
+			return
+		}
+		if r.URL.Query().Get("_") != expectedToken {
+			t.Errorf("token = %q, want %q", r.URL.Query().Get("_"), expectedToken)
+		}
+
+		writeEncryptedComixResponse(t, w, codec, map[string]any{"items": []map[string]any{}})
+	}))
+	defer server.Close()
+
+	source := newTestComix(t, server, "https://comix.to/title/pvry-one-piece", "")
+	groups, err := source.Groups(t.Context(), "")
+	require.NoError(t, err)
+	require.Len(t, groups, 0)
+}
+
+func TestComixGroupsRejectsInvalidRelayBeforeNetwork(t *testing.T) {
+	t.Parallel()
+
+	source := NewComixGroupLister("http://").(*comix)
+	_, err := source.Groups(t.Context(), "")
+	require.ErrorContains(t, err, "Comix impersonation proxy must include a host")
+}
+
 func newTestComix(t *testing.T, server *httptest.Server, mangaURL, groupID string) *comix {
 	t.Helper()
 

@@ -120,6 +120,11 @@ If you omit it, mangarr also checks common default locations. Full config and ov
 
 See [Comix source guidance](./docs/USAGE.md#source-inputs) for update limitations and group selection.
 
+Discover scanlation-group native ids (for `groups.yaml` / `profiles.yaml`)
+with the [group search command](./docs/USAGE.md#groups):
+`mangarr groups comix --search "flame"` lists comix group IDs, and
+`mangarr groups atsumaru -m <manga-url>` lists a manga's scan ids.
+
 ## More Docs
 
 User docs:

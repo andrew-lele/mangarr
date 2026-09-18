@@ -52,6 +52,16 @@ type comixChapterList struct {
 	} `json:"meta"`
 }
 
+type comixGroupList struct {
+	Items []comixGroup `json:"items"`
+}
+
+type comixGroup struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
 type comixChapter struct {
 	ID      int                  `json:"id"`
 	MangaID int                  `json:"mangaId"`
@@ -134,6 +144,14 @@ func NewComix(mangaURL, groupID, impersonationProxy string) domain.Source {
 		ImpersonationErr: impersonationErr,
 		Impersonating:    impersonating,
 	}
+}
+
+// NewComixGroupLister builds a Comix scanlation-group listing client. The
+// transport/codec setup is identical to NewComix, so the lister is just the
+// comix source adapter used for its Groups capability; the empty manga URL
+// is never touched by group discovery and must not be ValidateInput'd.
+func NewComixGroupLister(impersonationProxy string) domain.GroupLister {
+	return NewComix("", "", impersonationProxy).(domain.GroupLister)
 }
 
 // validateImpersonationProxy rejects relay targets that would never work or
@@ -301,6 +319,41 @@ func (c *comix) Pages(ctx context.Context, chapter domain.Chapter) ([]domain.Ima
 	}
 
 	return imageInfos, nil
+}
+
+// Groups lists scanlation groups from the site's group catalog
+// (GET /api/v1/groups). The UI's group search passes `keyword`; with an
+// empty query the catalog's first page (comixResultLimit rows) is listed.
+// Ids are the numeric GroupIDs chapters carry and groups.yaml `sources`
+// map to. Order is the server's relevance order.
+func (c *comix) Groups(ctx context.Context, query string) ([]domain.ScanlationGroup, error) {
+	if c.ImpersonationErr != nil {
+		return nil, fmt.Errorf("listing Comix groups: %w", c.ImpersonationErr)
+	}
+
+	params := comixParams{"limit": comixResultLimit}
+	if query != "" {
+		params["keyword"] = query
+	}
+
+	var response comixGroupList
+	if err := c.get(ctx, comixAPIPath+"/groups", params, &response); err != nil {
+		return nil, fmt.Errorf("listing Comix groups: %w", err)
+	}
+
+	groups := make([]domain.ScanlationGroup, 0, len(response.Items))
+	for _, item := range response.Items {
+		if item.ID == 0 || item.Name == "" {
+			continue
+		}
+		groups = append(groups, domain.ScanlationGroup{
+			ID:   strconv.Itoa(item.ID),
+			Name: item.Name,
+			Slug: item.Slug,
+		})
+	}
+
+	return groups, nil
 }
 
 func (c *comix) get(ctx context.Context, path string, params comixParams, destination any) error {

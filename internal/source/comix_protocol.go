@@ -267,19 +267,11 @@ func isComixProtectedPath(path string) bool {
 		chapterID := after
 		return chapterID != "" && !strings.Contains(chapterID, "/")
 	}
-	if !strings.HasPrefix(path, "/groups/") || !strings.HasSuffix(path, "/chapters") {
-		return false
+	// Group catalog, group search, and one group's chapters are all
+	// token-gated the same way.
+	if path == "/groups" || strings.HasPrefix(path, "/groups/") {
+		return true
 	}
 
-	groupID := strings.TrimSuffix(strings.TrimPrefix(path, "/groups/"), "/chapters")
-	if groupID == "" {
-		return false
-	}
-	for _, character := range groupID {
-		if character < '0' || character > '9' {
-			return false
-		}
-	}
-
-	return true
+	return false
 }

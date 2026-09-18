@@ -242,6 +242,48 @@ each reload. Atomic replacement and delete-then-recreate saves remain watched.
 An invalid, incomplete, or temporarily missing config keeps the last valid
 settings active. Changes to pprof and log file output settings require a restart.
 
+### `groups`
+
+List or search scanlation groups for a source so you can build
+`groups.yaml` / `profiles.yaml` native-id mappings from the terminal.
+
+```bash
+mangarr groups <source> [--search <query>] [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--search` | list groups whose name contains the query (case-insensitive); an empty query lists the source's first page of groups |
+| `-m`, `--manga` | atsumaru: manga URL whose scanlation groups are listed (required for atsumaru) |
+| `--impersonation-proxy` | comix: FlareSolverr-compatible relay origin that solves comix.to's Cloudflare challenge |
+
+Each group prints as `ID\tName` (plus `\tSlug` for comix) — exactly the
+native id (comix numeric group ID, atsumaru scan ID) you put in a
+`groups.yaml` `sources` entry and the human name you might use as an
+alias:
+
+```bash
+$ mangarr groups comix --search "flame" --impersonation-proxy http://127.0.0.1:8191
+9641	Flame Comics	flame-comics
+$ mangarr groups atsumaru -m https://atsu.moe/manga/Q5Mqy
+cmgzlsevifjhtm191rqugvee3	Alpha
+cmo61dqz80002zymjeo13wbw5	Delta
+```
+
+Group discovery per source:
+
+- **comix**: queries the site's group catalog (`GET /api/v1/groups`) with
+the search term as `keyword`. It uses the same request-token codec and
+Cloudflare impersonation transport as chapter discovery, so `--impersonation-proxy`
+must be set when comix.to answers direct requests with a challenge.
+- **atsumaru**: lists the manga's scanlators (`/api/manga/page`), because
+Atsumaru groups ARE the translators of a specific manga; `-m` is required
+and the scan ids returned are the `-g` values the manga's chapters carry.
+- Sources without a scanlation-group model (`tcbscans`, `mangaplus`,
+`flamecomics`, `asurascans`, `cubari`, `weebcentral`, `mangadex`) print
+`source <name> does not expose scanlation groups` and exit 0, so scripts
+can iterate over sources.
+
 ### `version`
 
 Show local build/version info and attempt an advisory update check. Local version

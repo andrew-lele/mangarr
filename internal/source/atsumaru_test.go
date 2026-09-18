@@ -254,6 +254,70 @@ func TestAtsumaruPagesErrorsWhenNoPages(t *testing.T) {
 	require.EqualError(t, err, "getting image URLs for chapter ID yzmwX4")
 }
 
+func TestAtsumaruGroupsListsScanlators(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/manga/page", r.URL.Path)
+		require.Equal(t, "Q5Mqy", r.URL.Query().Get("id"))
+
+		fmt.Fprint(w, `{
+			"mangaPage": {
+				"id": "Q5Mqy",
+				"title": "Kagurabachi",
+				"scanlators": [
+					{"id": "scan-1", "name": "O TRANSLATIONS"},
+					{"id": "scan-2", "name": "Lagoon Scans"}
+				]
+			}
+		}`)
+	}))
+	defer server.Close()
+
+	src := newTestAtsumaru(server.URL + "/manga/Q5Mqy")
+
+	groups, err := src.Groups(t.Context(), "")
+	require.NoError(t, err)
+	require.Len(t, groups, 2)
+	require.Equal(t, "scan-1", groups[0].ID)
+	require.Equal(t, "O TRANSLATIONS", groups[0].Name)
+	require.Equal(t, "scan-2", groups[1].ID)
+	require.Equal(t, "Lagoon Scans", groups[1].Name)
+}
+
+func TestAtsumaruGroupsFiltersByQuery(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{
+			"mangaPage": {
+				"scanlators": [
+					{"id": "scan-1", "name": "Lagoon Scans"},
+					{"id": "scan-2", "name": "O TRANSLATIONS"}
+				]
+			}
+		}`)
+	}))
+	defer server.Close()
+
+	src := newTestAtsumaru(server.URL + "/manga/Q5Mqy")
+
+	groups, err := src.Groups(t.Context(), "lagoon")
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+	require.Equal(t, "scan-1", groups[0].ID)
+	require.Equal(t, "Lagoon Scans", groups[0].Name)
+}
+
+func TestAtsumaruGroupsRequiresMangaURL(t *testing.T) {
+	t.Parallel()
+
+	src := NewAtsumaruGroupLister("")
+
+	_, err := src.Groups(t.Context(), "")
+	require.EqualError(t, err, "listing Atsumaru groups requires a manga URL")
+}
+
 func newTestAtsumaru(mangaURL string) *atsumaru {
 	return &atsumaru{
 		MangaURL: mangaURL,

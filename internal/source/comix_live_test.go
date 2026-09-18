@@ -37,4 +37,13 @@ func TestComixLiveThroughImpersonationRelay(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, manga.ID != "")
 	require.True(t, manga.Title != "")
+
+	// Group discovery rides the same minted clearance: one more signed API
+	// call to the group catalog, which must answer with the known groups
+	// (numeric GroupIDs feeding groups.yaml native ids).
+	groups, err := source.Groups(t.Context(), "Flame")
+	require.NoError(t, err)
+	require.Greater(t, len(groups), 0)
+	require.True(t, groups[0].ID != "")
+	require.True(t, groups[0].Name != "")
 }

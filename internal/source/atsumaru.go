@@ -47,6 +47,17 @@ type atsumaruReadChapterResponse struct {
 	} `json:"readChapter"`
 }
 
+type atsumaruMangaPageResponse struct {
+	MangaPage struct {
+		Scanlators []atsumaruScanlator `json:"scanlators"`
+	} `json:"mangaPage"`
+}
+
+type atsumaruScanlator struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type atsumaruPage struct {
 	Image string `json:"image"`
 }
@@ -63,6 +74,14 @@ func NewAtsumaru(mangaURL, scanID string) domain.Source {
 		Client:   &client,
 		BaseURL:  atsumaruURL,
 	}
+}
+
+// NewAtsumaruGroupLister builds an Atsumaru scanlation-group listing client.
+// Atsumaru groups ARE the manga's scanlators, so the lister is the atsumaru
+// source adapter used for its Groups capability with the manga URL; the scan
+// ID is not needed for listing.
+func NewAtsumaruGroupLister(mangaURL string) domain.GroupLister {
+	return NewAtsumaru(mangaURL, "").(domain.GroupLister)
 }
 
 func (a *atsumaru) String() string {
@@ -179,6 +198,45 @@ func (a *atsumaru) Pages(ctx context.Context, chapter domain.Chapter) ([]domain.
 	}
 
 	return imageInfos, nil
+}
+
+// Groups lists the manga's scanlation groups from the manga page endpoint
+// (mangaPage.scanlators). Atsumaru has no global group catalog: a scan ID is
+// the ScanID a manga's chapters carry and maps to the manga's own
+// translators, so the manga URL is required input. query filters the
+// scanlators client-side (case-insensitive substring on name); the returned
+// order is the reader's order (primary translator first).
+func (a *atsumaru) Groups(ctx context.Context, query string) ([]domain.ScanlationGroup, error) {
+	if a.MangaURL == "" {
+		return nil, fmt.Errorf("listing Atsumaru groups requires a manga URL")
+	}
+	mangaID, err := a.extractMangaID()
+	if err != nil {
+		return nil, fmt.Errorf("listing Atsumaru groups: %w", err)
+	}
+
+	apiURL, err := a.apiURL("api/manga/page", url.Values{"id": []string{mangaID}})
+	if err != nil {
+		return nil, fmt.Errorf("listing Atsumaru groups: %w", err)
+	}
+
+	var pageResp atsumaruMangaPageResponse
+	if err := a.getJSON(ctx, apiURL, &pageResp); err != nil {
+		return nil, fmt.Errorf("listing Atsumaru groups from %s: %w", apiURL, err)
+	}
+
+	groups := make([]domain.ScanlationGroup, 0, len(pageResp.MangaPage.Scanlators))
+	for _, scanlator := range pageResp.MangaPage.Scanlators {
+		if scanlator.ID == "" || scanlator.Name == "" {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(scanlator.Name), strings.ToLower(query)) {
+			continue
+		}
+		groups = append(groups, domain.ScanlationGroup{ID: scanlator.ID, Name: scanlator.Name})
+	}
+
+	return groups, nil
 }
 
 func (a *atsumaru) extractMangaID() (string, error) {

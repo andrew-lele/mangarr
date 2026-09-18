@@ -11,16 +11,18 @@ import (
 )
 
 type dependencies struct {
-	selectSource  func(domain.MonitoredManga) (domain.Source, error)
-	versionClient *http.Client
-	releaseURL    string
+	selectSource      func(domain.MonitoredManga) (domain.Source, error)
+	selectGroupLister func(domain.GroupSearchOptions) (domain.GroupLister, error)
+	versionClient     *http.Client
+	releaseURL        string
 }
 
 func defaultDependencies() dependencies {
 	return dependencies{
-		selectSource:  source.Select,
-		versionClient: &http.Client{Timeout: 10 * time.Second},
-		releaseURL:    githubURL,
+		selectSource:      source.Select,
+		selectGroupLister: source.NewGroupLister,
+		versionClient:     &http.Client{Timeout: 10 * time.Second},
+		releaseURL:        githubURL,
 	}
 }
 
@@ -52,6 +54,7 @@ For more information and examples, visit https://github.com/nuxencs/mangarr`,
 	initDownloadFlags(download, downloadOptions)
 	root.AddCommand(newVersionCommand(deps.versionClient, deps.releaseURL))
 	root.AddCommand(download)
+	root.AddCommand(newGroupsCommand(deps.selectGroupLister))
 	root.AddCommand(newMonitorCommand(rootOptions))
 
 	return root

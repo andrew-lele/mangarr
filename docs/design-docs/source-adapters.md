@@ -9,6 +9,12 @@ All adapters implement the small `domain.Source` contract:
 - adapters return values. They do not mutate caller-owned manga or chapter values.
 - `source.Select` is the single registry used by download and monitor commands.
 
+Sources with a scanlation-group model additionally implement the optional
+`domain.GroupLister` capability (`Groups(ctx, query)` -> native-id group
+listings), consumed by the `groups` CLI command; everything else reports
+"does not expose scanlation groups". `source.NewGroupLister` is the
+capability's registry (comix + atsumaru today).
+
 ## Matrix
 
 | Identifier | Input (`-m`) | Extra args | Validation highlights | Notes |
@@ -20,8 +26,8 @@ All adapters implement the small `domain.Source` contract:
 | `asurascans` | full series URL | none | `https://asurascans.com/comics/...` | server-rendered HTML; filters locked early-access chapters from discovery |
 | `cubari` | gist URL | `-g` required | valid URL + non-empty group | images listed in the payload, or fetched from the `/proxy/...` path the gist points at |
 | `weebcentral` | full series URL | none | `https://weebcentral.com` prefix | scraper + chapter image fragment fetch |
-| `comix` | full manga URL | `-g` optional | `https://comix.to/title/...` prefix; numeric group when set | private API codec + referer-protected images + tile reconstruction; optional `impersonationProxy` relays Cloudflare challenge solving to a FlareSolverr-compatible sidecar (see [USAGE](./../USAGE.md#source-inputs)) |
-| `atsumaru` | full manga URL | `-g` required | `https://atsu.moe/manga/...` prefix + non-empty scan ID | API-based |
+| `comix` | full manga URL | `-g` optional | `https://comix.to/title/...` prefix; numeric group when set | private API codec + referer-protected images + tile reconstruction; optional `impersonationProxy` relays Cloudflare challenge solving to a FlareSolverr-compatible sidecar (see [USAGE](./../USAGE.md#source-inputs)); group discovery reads `GET /api/v1/groups?keyword=` |
+| `atsumaru` | full manga URL | `-g` required | `https://atsu.moe/manga/...` prefix + non-empty scan ID | API-based; group discovery lists the manga's scanlators from `/api/manga/page` |
 
 ## Rules
 
@@ -34,6 +40,9 @@ All adapters implement the small `domain.Source` contract:
 ## Shared Behavior
 
 - unknown source values fail fast in source selection
+- sources without a group model (tcbscans, mangaplus, flamecomics,
+  asurascans, cubari, weebcentral, mangadex) fail group listing with
+  `source <name> does not expose scanlation groups`
 - `mangaplus` uses the mobile API because the web protobuf endpoint rejects current unauthenticated access; chapter discovery reads the current `chapter_list_v2` field with legacy list fields kept as fallback
 - `asurascans` removes chapters marked `is_locked=true` or `is_premium=true` before returning the chapter map
 - `weebcentral` fetches chapter images from the `/chapters/<id>/images` HTML fragment
