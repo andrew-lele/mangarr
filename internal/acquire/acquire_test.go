@@ -354,7 +354,9 @@ func TestChapterSkipsDecimalSameNumberWithDifferentTitle(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, Skipped, result.Status)
 
-	// Force bypasses the number-based skip and re-downloads.
+	// Force bypasses the number-based skip and re-downloads. The redundant
+	// title ("Chapter 112.5" echoes the number) is dropped by the templater,
+	// so the re-download lands on the SAME filename: still one file on disk.
 	second.Force = true
 	result, err = Chapter(t.Context(), zerolog.Nop(), second)
 	require.NoError(t, err)
@@ -362,7 +364,7 @@ func TestChapterSkipsDecimalSameNumberWithDifferentTitle(t *testing.T) {
 
 	entries, err := os.ReadDir(filepath.Join(second.DownloadDirectory, "Blue Lock"))
 	require.NoError(t, err)
-	require.Len(t, entries, 2, "force replaces by creating the title variant next to the original")
+	require.Len(t, entries, 1, "force lands on the canonical (redundant-title collapsed) filename")
 }
 
 func TestArchiveForChapterExists(t *testing.T) {

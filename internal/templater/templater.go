@@ -1,6 +1,7 @@
 package templater
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -43,6 +44,23 @@ func (t *Templater) handleMangaTitle(options string) string {
 func (t *Templater) handleChapterTitle(options string) string {
 	if t.Chapter.Title == "" {
 		return ""
+	}
+
+	// *arr-style redundancy drop: when the chapter title merely echoes the
+	// chapter number ("Chapter 131", "Ch. 131", "Mission 140", "131"),
+	// treat it as absent so filenames are not redundant ("Ch. 131 -
+	// Chapter 131"). Title matches number => render as if title were empty.
+	numText := t.Chapter.Number.String()
+	candidate := strings.ToLower(strings.TrimSpace(t.Chapter.Title))
+	variants := make([]string, 0, 4)
+	variants = append(variants, strings.ToLower(numText))
+	variants = append(variants, fmt.Sprintf("chapter %s", strings.ToLower(numText)))
+	variants = append(variants, fmt.Sprintf("ch. %s", strings.ToLower(numText)))
+	variants = append(variants, fmt.Sprintf("mission %s", strings.ToLower(numText)))
+	for _, v := range variants {
+		if candidate == v {
+			return ""
+		}
 	}
 
 	clean := strings.ReplaceAll(options, ":", "")
