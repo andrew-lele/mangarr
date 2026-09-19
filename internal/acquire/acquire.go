@@ -120,7 +120,11 @@ func Chapter(ctx context.Context, log zerolog.Logger, request Request) (Result, 
 		request.Chapter,
 		manga.IsManhwa,
 		func(log zerolog.Logger, sourceDir, cbzPath string, isManhwa bool) error {
-			return files.CreateCbzArchive(ctx, log, sourceDir, cbzPath, isManhwa)
+			return files.CreateCbzArchive(ctx, log, sourceDir, cbzPath, isManhwa, files.ComicInfo{
+				Series: manga.Title,
+				Number: request.Chapter.Number.String(),
+				Title:  request.Chapter.Title,
+			})
 		},
 	); err != nil {
 		return result, fmt.Errorf("downloading chapter %q: %w", name, err)

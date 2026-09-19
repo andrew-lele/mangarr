@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -113,7 +114,12 @@ func TestChapterDownloadsAndThenSkipsExistingArchive(t *testing.T) {
 
 	archive, err := zip.OpenReader(result.Path)
 	require.NoError(t, err)
-	require.Len(t, archive.File, 1)
+	require.Len(t, archive.File, 2, "each archive carries ComicInfo.xml plus the page")
+	info := zipEntry(t, archive.File, "ComicInfo.xml")
+	require.NotNil(t, info, "archive must embed ComicInfo.xml")
+	require.Contains(t, info.Content, "<Series>Replacement Title</Series>", "series must come from the resolved manga title")
+	require.Contains(t, info.Content, "<Number>7.1</Number>", "chapter number must round-trip")
+	require.Contains(t, info.Content, "<Title>The Chapter</Title>", "chapter title must round-trip")
 	require.NoError(t, archive.Close())
 
 	result, err = Chapter(t.Context(), zerolog.Nop(), request)
@@ -418,4 +424,30 @@ func pngServer(t *testing.T) *httptest.Server {
 		_, _ = w.Write(imageBytes.Bytes())
 	}))
 	return server
+}
+
+// zipEntry returns the fully read content of the named zip entry, or nil
+// when the archive does not contain it.
+type zipEntryContent struct {
+	Name    string
+	Content string
+}
+
+func zipEntry(_ *testing.T, files []*zip.File, name string) *zipEntryContent {
+	for _, f := range files {
+		if f.Name != name {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil
+		}
+		defer rc.Close()
+		data, err := io.ReadAll(rc)
+		if err != nil {
+			return nil
+		}
+		return &zipEntryContent{Name: f.Name, Content: string(data)}
+	}
+	return nil
 }

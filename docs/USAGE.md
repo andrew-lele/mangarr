@@ -190,6 +190,18 @@ logLevel: "DEBUG"
 #logMaxBackups: 3
 ```
 
+### Archive metadata
+
+Every downloaded `.cbz` embeds a ComicRack `ComicInfo.xml` entry carrying
+`Series` (the manga title), `Number` (the chapter number, decimals
+preserved, e.g. `112.5`), the chapter `Title` (omitted when the source has
+none), `Genre: Manga`, `PageCount`, and `Writer: mangarr`. Comic readers that
+read ComicInfo (Komga, Mihon) therefore show the real series, number, and
+title; the file **name** becomes presentation-only and can be changed
+without touching the displayed metadata. Readers that ignore ComicInfo keep
+deriving titles from the filename, so the naming template still matters for
+those.
+
 ### Title-based tracked entries
 
 An entry may omit `source`/`manga`/`group` entirely and be tracked by title

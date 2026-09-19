@@ -2,7 +2,9 @@ package files
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/xml"
 	"errors"
 	"image"
 	"image/color"
@@ -10,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -41,7 +44,7 @@ func TestCreateCbzArchiveFlushesOutput(t *testing.T) {
 	}
 
 	outPath := filepath.Join(tmpDir, "out.cbz")
-	if err := CreateCbzArchive(t.Context(), zerolog.Nop(), sourceDir, outPath, false); err != nil {
+	if err := CreateCbzArchive(t.Context(), zerolog.Nop(), sourceDir, outPath, false, ComicInfo{}); err != nil {
 		t.Fatalf("create cbz: %v", err)
 	}
 
@@ -51,9 +54,167 @@ func TestCreateCbzArchiveFlushesOutput(t *testing.T) {
 	}
 	defer r.Close()
 
-	if len(r.File) != 1 {
-		t.Fatalf("expected 1 file in cbz, got %d", len(r.File))
+	if len(r.File) != 2 {
+		t.Fatalf("expected ComicInfo.xml + 1 image in cbz, got %d entries", len(r.File))
 	}
+	if r.File[0].Name != "ComicInfo.xml" {
+		t.Errorf("ComicInfo.xml must be the first entry, got %q", r.File[0].Name)
+	}
+}
+
+func writeTestImage(t *testing.T, dir, name string) {
+	t.Helper()
+
+	f, err := os.Create(filepath.Join(dir, name))
+	if err != nil {
+		t.Fatalf("create image: %v", err)
+	}
+
+	img := image.NewRGBA(image.Rect(0, 0, 2, 3))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	if err := png.Encode(f, img); err != nil {
+		_ = f.Close()
+		t.Fatalf("encode png: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close image: %v", err)
+	}
+}
+
+// readZipEntries reads every entry of a cbz so structure and content are
+// validated end to end (entry CRCs included).
+func readZipEntries(t *testing.T, path string) map[string][]byte {
+	t.Helper()
+
+	r, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatalf("open cbz: %v", err)
+	}
+
+	entries := make(map[string][]byte, len(r.File))
+	for _, f := range r.File {
+		rc, err := f.Open()
+		if err != nil {
+			_ = r.Close()
+			t.Fatalf("open entry %s: %v", f.Name, err)
+		}
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			_ = r.Close()
+			t.Fatalf("read entry %s: %v", f.Name, err)
+		}
+		entries[f.Name] = data
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("close cbz: %v", err)
+	}
+
+	return entries
+}
+
+func TestCreateCbzArchiveEmbedsComicInfo(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	sourceDir := filepath.Join(tmpDir, "src")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatalf("mkdir source dir: %v", err)
+	}
+	writeTestImage(t, sourceDir, "001.png")
+	writeTestImage(t, sourceDir, "002.png")
+
+	outPath := filepath.Join(tmpDir, "out.cbz")
+	if err := CreateCbzArchive(t.Context(), zerolog.Nop(), sourceDir, outPath, false, ComicInfo{
+		Series: "Blue Lock",
+		Number: "112.5",
+		Title:  "Chapter 112.5",
+	}); err != nil {
+		t.Fatalf("create cbz: %v", err)
+	}
+
+	entries := readZipEntries(t, outPath)
+	infoXML, ok := entries["ComicInfo.xml"]
+	if !ok {
+		t.Fatalf("archive is missing ComicInfo.xml; entries: %v", entryNames(entries))
+	}
+	if !bytes.HasPrefix(infoXML, []byte(xml.Header)) {
+		t.Errorf("ComicInfo.xml must start with the XML declaration, got %q", infoXML)
+	}
+
+	var info comicInfoDocument
+	if err := xml.Unmarshal(infoXML, &info); err != nil {
+		t.Fatalf("parse ComicInfo.xml: %v", err)
+	}
+	if info.Series != "Blue Lock" {
+		t.Errorf("Series = %q, want %q", info.Series, "Blue Lock")
+	}
+	if info.Number != "112.5" {
+		t.Errorf("Number = %q, want %q (decimal must round-trip)", info.Number, "112.5")
+	}
+	if info.Title != "Chapter 112.5" {
+		t.Errorf("Title = %q, want %q", info.Title, "Chapter 112.5")
+	}
+	if info.Genre != "Manga" {
+		t.Errorf("Genre = %q, want %q", info.Genre, "Manga")
+	}
+	if info.PageCount != 2 {
+		t.Errorf("PageCount = %d, want 2", info.PageCount)
+	}
+	if info.Writer != "mangarr" {
+		t.Errorf("Writer = %q, want %q", info.Writer, "mangarr")
+	}
+
+	// Both pages must survive alongside the metadata entry.
+	for _, name := range []string{"001.png", "002.png"} {
+		if _, ok := entries[name]; !ok {
+			t.Errorf("%s missing after ComicInfo.xml embedded", name)
+		}
+	}
+}
+
+func TestCreateCbzArchiveOmitsEmptyChapterTitle(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	sourceDir := filepath.Join(tmpDir, "src")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatalf("mkdir source dir: %v", err)
+	}
+	writeTestImage(t, sourceDir, "001.png")
+
+	outPath := filepath.Join(tmpDir, "out.cbz")
+	if err := CreateCbzArchive(t.Context(), zerolog.Nop(), sourceDir, outPath, false, ComicInfo{
+		Series: "Blue Lock",
+		Number: "361",
+	}); err != nil {
+		t.Fatalf("create cbz: %v", err)
+	}
+
+	entries := readZipEntries(t, outPath)
+	infoXML, ok := entries["ComicInfo.xml"]
+	if !ok {
+		t.Fatalf("archive is missing ComicInfo.xml")
+	}
+
+	var info comicInfoDocument
+	if err := xml.Unmarshal(infoXML, &info); err != nil {
+		t.Fatalf("parse ComicInfo.xml: %v", err)
+	}
+	if info.Title != "" {
+		t.Errorf("Title = %q, want empty (readers fall back to the filename)", info.Title)
+	}
+	if strings.Contains(string(infoXML), "<Title>") {
+		t.Errorf("ComicInfo.xml must not contain a <Title> element, got:\n%s", infoXML)
+	}
+}
+
+func entryNames(entries map[string][]byte) []string {
+	names := make([]string, 0, len(entries))
+	for name := range entries {
+		names = append(names, name)
+	}
+	return names
 }
 
 func TestCreateCbzArchiveDoesNotPublishEmptyArchive(t *testing.T) {
@@ -65,7 +226,7 @@ func TestCreateCbzArchiveDoesNotPublishEmptyArchive(t *testing.T) {
 		t.Fatalf("mkdir empty source: %v", err)
 	}
 	outPath := filepath.Join(tmpDir, "out.cbz")
-	err := CreateCbzArchive(t.Context(), zerolog.Nop(), sourceDir, outPath, false)
+	err := CreateCbzArchive(t.Context(), zerolog.Nop(), sourceDir, outPath, false, ComicInfo{})
 
 	if err == nil {
 		t.Fatal("expected empty source directory to fail")

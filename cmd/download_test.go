@@ -71,8 +71,8 @@ func TestDownloadForceReplacesOnlySelectedChapters(t *testing.T) {
 				}
 				archive, err := zip.OpenReader(path)
 				require.NoError(t, err)
-				require.Len(t, archive.File, 1)
-				page, err := archive.File[0].Open()
+				require.NotNil(t, comicInfoEntry(t, archive), "rebuilt archive must embed ComicInfo.xml")
+				page, err := imageEntry(t, archive).Open()
 				require.NoError(t, err)
 				data, err := io.ReadAll(page)
 				require.NoError(t, err)
@@ -155,10 +155,42 @@ func TestDownloadRateLimit(t *testing.T) {
 			for _, number := range tc.chapters {
 				archive, err := zip.OpenReader(filepath.Join(directory, "Fixture", "Chapter "+number+".cbz"))
 				require.NoError(t, err)
-				require.Len(t, archive.File, 1)
-				require.Equal(t, "001.png", archive.File[0].Name)
+				require.NotNil(t, comicInfoEntry(t, archive), "archive must embed ComicInfo.xml")
+				require.Equal(t, "001.png", imageEntry(t, archive).Name)
 				require.NoError(t, archive.Close())
 			}
 		})
 	}
+}
+
+// comicInfoEntry returns the ComicInfo.xml entry of a produced archive, or
+// nil when the archive lacks it.
+func comicInfoEntry(t *testing.T, archive *zip.ReadCloser) *zip.File {
+	t.Helper()
+	for _, f := range archive.File {
+		if f.Name == "ComicInfo.xml" {
+			return f
+		}
+	}
+	return nil
+}
+
+// imageEntry returns the first non-metadata entry of a produced archive.
+func imageEntry(t *testing.T, archive *zip.ReadCloser) *zip.File {
+	t.Helper()
+	for _, f := range archive.File {
+		if f.Name != "ComicInfo.xml" {
+			return f
+		}
+	}
+	t.Fatalf("archive has no image entries: %v", zipEntryNames(archive.File))
+	return nil
+}
+
+func zipEntryNames(files []*zip.File) []string {
+	names := make([]string, 0, len(files))
+	for _, f := range files {
+		names = append(names, f.Name)
+	}
+	return names
 }

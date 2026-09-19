@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"cmp"
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"image"
@@ -34,6 +35,25 @@ type imageMeta struct {
 	height int
 }
 
+// ComicInfo is the ComicRack metadata written into every archive as
+// ComicInfo.xml, so readers (Komga, Mihon) display the real series,
+// chapter number, and chapter title instead of deriving them from the
+// filename. The fields mirror the tag subset of Komga's
+// comicrack.dto.ComicInfo (Jackson @JsonProperty bindings).
+type ComicInfo struct {
+	// Series is the manga/series title.
+	Series string
+
+	// Number is the chapter number rendered exactly as discovered
+	// (fractional chapters like "112.5" stay "112.5"; Komga parses the
+	// string before converting to decimal).
+	Number string
+
+	// Title is the chapter title. When empty, the <Title> element is
+	// omitted and readers fall back to their filename-derived title.
+	Title string
+}
+
 func IsValidLocation(location string) error {
 	info, err := os.Stat(location)
 	if err != nil {
@@ -47,9 +67,11 @@ func IsValidLocation(location string) error {
 }
 
 // CreateCbzArchive creates a zip (.cbz) archive from the images in sourceDir.
-// It preserves the destination until assembly succeeds and cancellation is
-// checked immediately before publication.
-func CreateCbzArchive(ctx context.Context, log zerolog.Logger, sourceDir, cbzPath string, isManhwa bool) error {
+// A ComicInfo.xml metadata entry (see ComicInfo) is embedded first so
+// comic readers show the real series/chapter title and number. It preserves
+// the destination until assembly succeeds and cancellation is checked
+// immediately before publication.
+func CreateCbzArchive(ctx context.Context, log zerolog.Logger, sourceDir, cbzPath string, isManhwa bool, metadata ComicInfo) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -136,8 +158,17 @@ func CreateCbzArchive(ctx context.Context, log zerolog.Logger, sourceDir, cbzPat
 		return fmt.Errorf("creating archive: no images to write")
 	}
 
+	comicInfoXML, err := marshalComicInfo(metadata, len(selectedImages))
+	if err != nil {
+		return fmt.Errorf("marshaling ComicInfo.xml: %w", err)
+	}
+
 	if err := publishFileAtomically(ctx, cbzPath, func(destination io.Writer) error {
 		zipWriter := zip.NewWriter(destination)
+		if err := addBytesToZip(zipWriter, "ComicInfo.xml", comicInfoXML); err != nil {
+			_ = zipWriter.Close()
+			return err
+		}
 		for _, img := range selectedImages {
 			if err := ctx.Err(); err != nil {
 				_ = zipWriter.Close()
@@ -215,6 +246,57 @@ func isLikelyUnwanted(img imageMeta, dominantW int) bool {
 	}
 
 	return true
+}
+
+// comicInfoDocument is the ComicRack ComicInfo.xml schema subset mangarr
+// embeds. Field names match Komga's comicrack.dto.ComicInfo Jackson
+// bindings: Title/Series/Number are plain strings; a blank Title renders no
+// <Title> element (omitempty) so readers fall back to the filename.
+type comicInfoDocument struct {
+	XMLName   xml.Name `xml:"ComicInfo"`
+	Series    string   `xml:"Series"`
+	Number    string   `xml:"Number"`
+	Title     string   `xml:"Title,omitempty"`
+	Genre     string   `xml:"Genre"`
+	PageCount int      `xml:"PageCount"`
+	Writer    string   `xml:"Writer"`
+}
+
+func marshalComicInfo(metadata ComicInfo, pageCount int) ([]byte, error) {
+	doc, err := xml.Marshal(comicInfoDocument{
+		Series:    metadata.Series,
+		Number:    metadata.Number,
+		Title:     metadata.Title,
+		Genre:     "Manga",
+		PageCount: pageCount,
+		Writer:    "mangarr",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// xml.Marshal omits the declaration; prepend it so the document matches
+	// the ComicRack XmlComicProvider convention. Readers ignore it either way.
+	return append([]byte(xml.Header), doc...), nil
+}
+
+// addBytesToZip writes an in-memory file into an open zip archive. Used for
+// the ComicInfo.xml metadata entry, which never exists on disk.
+func addBytesToZip(zipWriter *zip.Writer, fileName string, data []byte) error {
+	hdr := &zip.FileHeader{
+		Name:   fileName,
+		Method: zip.Store,
+	}
+	dst, err := zipWriter.CreateHeader(hdr)
+	if err != nil {
+		return fmt.Errorf("creating zip entry: %w", err)
+	}
+
+	if _, err := dst.Write(data); err != nil {
+		return fmt.Errorf("writing %s: %w", fileName, err)
+	}
+
+	return nil
 }
 
 // addFileToZip copies a single file into an open zip archive.
