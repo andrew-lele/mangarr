@@ -202,6 +202,21 @@ without touching the displayed metadata. Readers that ignore ComicInfo keep
 deriving titles from the filename, so the naming template still matters for
 those.
 
+Archives downloaded before this feature are bare image zips and carry no
+ComicInfo. `mangarr cbz-retrofit <library-root>` rebuilds them in place
+without re-downloading: `Series` comes from the series directory, `Number`
+from the filename (`131.cbz`, `112.5.cbz`, or `131 - Real Title.cbz`), the
+chapter `Title` from the filename when present (echoed as `Chapter N`
+otherwise, so Komga renders "N - Chapter N" instead of the confusing
+"N - N"), and `PageCount` from the image entries. It is a dry run by
+default; `--apply` writes, archives that already contain ComicInfo.xml are
+skipped, and results are appended to `--log`:
+
+```bash
+mangarr cbz-retrofit /data/library/Manga            # report only
+mangarr cbz-retrofit /data/library/Manga --apply    # rebuild in place
+```
+
 ### Title-based tracked entries
 
 An entry may omit `source`/`manga`/`group` entirely and be tracked by title

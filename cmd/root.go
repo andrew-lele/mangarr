@@ -55,6 +55,7 @@ For more information and examples, visit https://github.com/nuxencs/mangarr`,
 	root.AddCommand(newVersionCommand(deps.versionClient, deps.releaseURL))
 	root.AddCommand(download)
 	root.AddCommand(newGroupsCommand(deps.selectGroupLister))
+	root.AddCommand(newCbzRetrofitCommand())
 	root.AddCommand(newMonitorCommand(rootOptions))
 
 	return root

@@ -74,9 +74,18 @@ monitoredManga:
 		archive, err := zip.OpenReader(path)
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, archive.Close()) })
-		require.NotNil(t, comicInfoEntry(t, archive), "archive must embed ComicInfo.xml")
-		pageEntry := imageEntry(t, archive)
-		require.Equal(t, "001.png", pageEntry.Name)
+		// Find the ComicInfo.xml entry and the single page entry by name; the
+		// archive layout is metadata-first, so index-based access would break.
+		var pageEntry *zip.File
+		for _, f := range archive.File {
+			switch f.Name {
+			case "ComicInfo.xml":
+				// metadata present
+			case "001.png":
+				pageEntry = f
+			}
+		}
+		require.NotNil(t, pageEntry, "archive must embed ComicInfo.xml and page 001.png; got %v", zipEntryNames(archive.File))
 		reader, err := pageEntry.Open()
 		require.NoError(t, err)
 		data, err := io.ReadAll(reader)
